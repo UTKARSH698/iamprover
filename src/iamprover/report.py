@@ -14,6 +14,9 @@ def render_text(results: list[InvariantResult]) -> str:
             lines.append(f"    counterexample: {ce.principal}")
             lines.append(f"        can perform  {ce.action}")
             lines.append(f"        on resource  {ce.resource}")
+            if ce.context:
+                pairs = ", ".join(f"{k} = {v}" for k, v in sorted(ce.context.items()))
+                lines.append(f"        with context {pairs}")
     failed = sum(1 for r in results if not r.passed)
     lines.append("")
     lines.append(
@@ -30,7 +33,12 @@ def render_json(results: list[InvariantResult]) -> str:
             "description": res.invariant.description,
             "passed": res.passed,
             "counterexamples": [
-                {"principal": ce.principal, "action": ce.action, "resource": ce.resource}
+                {
+                    "principal": ce.principal,
+                    "action": ce.action,
+                    "resource": ce.resource,
+                    "context": ce.context,
+                }
                 for ce in res.counterexamples
             ],
         }

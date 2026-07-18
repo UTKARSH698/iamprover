@@ -5,6 +5,7 @@ import sys
 
 from iamprover.engine.solver import check_all
 from iamprover.invariants import load_invariants
+from iamprover.model import ANONYMOUS_ARN, Principal
 from iamprover.parsers.iam import load_account
 from iamprover.parsers.terraform import load_tf_plan
 from iamprover.report import render_json, render_text
@@ -27,6 +28,12 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--tf-plan", help="Terraform plan JSON (`terraform show -json plan`)")
     verify.add_argument("--invariants", required=True, help="Invariant spec YAML")
     verify.add_argument("--format", choices=["text", "json"], default="text")
+    verify.add_argument(
+        "--check-anonymous",
+        action="store_true",
+        help="Also verify invariants for an unauthenticated principal "
+        "(catches public resource-policy grants)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -36,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.check_anonymous:
+        account.principals.append(Principal(arn=ANONYMOUS_ARN, policies=[]))
 
     if not invariants:
         print("error: no invariants found in spec", file=sys.stderr)

@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+ANONYMOUS_ARN = "anonymous"
+
+
+@dataclass
+class Condition:
+    operator: str  # e.g. "StringEquals", "Bool", "IpAddress"
+    key: str  # e.g. "aws:SourceIp"
+    values: list[str]
+
 
 @dataclass
 class Statement:
@@ -10,7 +19,8 @@ class Statement:
     not_actions: list[str] = field(default_factory=list)
     resources: list[str] = field(default_factory=list)
     not_resources: list[str] = field(default_factory=list)
-    has_condition: bool = False
+    conditions: list[Condition] = field(default_factory=list)
+    principals: list[str] = field(default_factory=list)  # resource-based policies only
 
 
 @dataclass
@@ -28,6 +38,7 @@ class Principal:
 @dataclass
 class Account:
     principals: list[Principal]
+    resource_policies: list[Policy] = field(default_factory=list)
 
     def principal(self, arn: str) -> Principal:
         for p in self.principals:

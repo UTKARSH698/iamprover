@@ -7,6 +7,7 @@ from fnmatch import fnmatch
 
 import z3
 
+from iamprover.engine.context import Context
 from iamprover.engine.encoder import allowed
 from iamprover.engine.patterns import matches_any
 from iamprover.invariants import Invariant
@@ -18,6 +19,7 @@ class Counterexample:
     principal: str
     action: str
     resource: str
+    context: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -39,19 +41,23 @@ def check_invariant(account: Account, invariant: Invariant) -> InvariantResult:
     for principal in account.principals:
         if _exempt(principal.arn, invariant.unless_principals):
             continue
+        ctx = Context()
         solver = z3.Solver()
         # The action IAM evaluates is lowercased to model case-insensitive matching.
         solver.add(matches_any(action, invariant.actions, case_insensitive=True))
         solver.add(matches_any(resource, invariant.resources))
-        solver.add(allowed(principal, action, resource))
+        for key, value in invariant.where.items():
+            solver.add(ctx.constrain(key, value))
+        solver.add(allowed(principal, action, resource, ctx, account.resource_policies))
         if solver.check() == z3.sat:
             model = solver.model()
             result.passed = False
             result.counterexamples.append(
                 Counterexample(
                     principal=principal.arn,
-                    action=model[action].as_string(),
-                    resource=model[resource].as_string(),
+                    action=model.eval(action, model_completion=True).as_string(),
+                    resource=model.eval(resource, model_completion=True).as_string(),
+                    context=ctx.assignments(model),
                 )
             )
     return result

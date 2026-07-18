@@ -10,6 +10,8 @@ Spec format:
           resources: ["arn:aws:s3:::prod-data/*"]      # or singular `resource`
         unless_principal:
           - "arn:aws:iam::111122223333:role/data-team"  # exact or glob
+        where:                                          # optional: pin request context
+          aws:MultiFactorAuthPresent: "false"
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ class Invariant:
     actions: list[str]
     resources: list[str]
     unless_principals: list[str] = field(default_factory=list)
+    where: dict[str, str] = field(default_factory=dict)
 
 
 def _plural(spec: dict, singular: str) -> list[str]:
@@ -48,6 +51,7 @@ def load_invariants(path: str | Path) -> list[Invariant]:
                 actions=_plural(forbid, "action"),
                 resources=_plural(forbid, "resource"),
                 unless_principals=list(raw.get("unless_principal", [])),
+                where={k: str(v) for k, v in raw.get("where", {}).items()},
             )
         )
     return invariants

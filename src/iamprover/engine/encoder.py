@@ -1,20 +1,26 @@
 """Encode IAM policy-evaluation semantics as Z3 constraints.
 
-Semantics modeled (v0.1): explicit Deny overrides Allow; default deny;
-Action/NotAction and Resource/NotResource with `*`/`?` wildcards; action
-matching is case-insensitive (as in IAM). Conditions are ignored
-(over-approximation — see parsers.iam docstring).
+Semantics modeled (v0.2): explicit Deny overrides Allow; default deny;
+Action/NotAction and Resource/NotResource with `*`/`?` wildcards;
+case-insensitive action matching; Condition blocks (supported subset — see
+engine.conditions); same-account resource-based policies whose grants union
+with identity-based allows. Unknown condition operators default to True on
+Allow and False on Deny so permissions are only ever over-approximated.
 """
 
 from __future__ import annotations
 
 import z3
 
+from iamprover.engine.conditions import encode_conditions
+from iamprover.engine.context import Context
 from iamprover.engine.patterns import matches_any
-from iamprover.model import Principal, Statement
+from iamprover.model import Policy, Principal, Statement
 
 
-def statement_matches(stmt: Statement, action: z3.SeqRef, resource: z3.SeqRef) -> z3.BoolRef:
+def statement_matches(
+    stmt: Statement, action: z3.SeqRef, resource: z3.SeqRef, ctx: Context
+) -> z3.BoolRef:
     if stmt.not_actions:
         action_ok = z3.Not(matches_any(action, stmt.not_actions, case_insensitive=True))
     else:
@@ -25,19 +31,35 @@ def statement_matches(stmt: Statement, action: z3.SeqRef, resource: z3.SeqRef) -
     else:
         resource_ok = matches_any(resource, stmt.resources)
 
-    return z3.And(action_ok, resource_ok)
+    condition_ok = encode_conditions(stmt.conditions, ctx, unknown_default=stmt.effect == "Allow")
+    return z3.And(action_ok, resource_ok, condition_ok)
 
 
-def allowed(principal: Principal, action: z3.SeqRef, resource: z3.SeqRef) -> z3.BoolRef:
+def _grants_to(stmt: Statement, principal_arn: str) -> bool:
+    return "*" in stmt.principals or principal_arn in stmt.principals
+
+
+def allowed(
+    principal: Principal,
+    action: z3.SeqRef,
+    resource: z3.SeqRef,
+    ctx: Context,
+    resource_policies: list[Policy] = (),
+) -> z3.BoolRef:
     allow_terms = []
     deny_terms = []
     for policy in principal.policies:
         for stmt in policy.statements:
-            term = statement_matches(stmt, action, resource)
-            if stmt.effect == "Allow":
-                allow_terms.append(term)
-            else:
-                deny_terms.append(term)
+            term = statement_matches(stmt, action, resource, ctx)
+            (allow_terms if stmt.effect == "Allow" else deny_terms).append(term)
+
+    for policy in resource_policies:
+        for stmt in policy.statements:
+            if not _grants_to(stmt, principal.arn):
+                continue
+            term = statement_matches(stmt, action, resource, ctx)
+            (allow_terms if stmt.effect == "Allow" else deny_terms).append(term)
+
     allows = z3.Or(*allow_terms) if allow_terms else z3.BoolVal(False)
     denies = z3.Or(*deny_terms) if deny_terms else z3.BoolVal(False)
     return z3.And(allows, z3.Not(denies))

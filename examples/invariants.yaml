@@ -15,8 +15,18 @@ invariants:
       action: "s3:*"
       resource: "arn:aws:s3:::audit-logs/*"
 
-  - id: no-iam-mutation
-    description: No principal may mutate IAM (privilege-escalation surface)
+  - id: no-iam-mutation-without-mfa
+    description: No principal may mutate IAM without MFA (privilege-escalation surface)
     forbid:
       actions: ["iam:Create*", "iam:Put*", "iam:Attach*", "iam:Update*"]
       resource: "*"
+    where:
+      aws:MultiFactorAuthPresent: "false"
+
+  - id: prod-data-never-public
+    description: Unauthenticated principals must never reach prod-data (run with --check-anonymous)
+    forbid:
+      action: "s3:*"
+      resource: "arn:aws:s3:::prod-data/*"
+    unless_principal:
+      - "arn:aws:iam::111122223333:*"

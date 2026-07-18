@@ -66,23 +66,31 @@ invariants:
       - "arn:aws:iam::111122223333:role/data-team"
 ```
 
-## What is modeled (v0.1)
+## What is modeled (v0.2)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
 - Case-insensitive action matching (as IAM does it)
+- `Condition` blocks: `StringEquals/Like` (and Not/Arn variants), `Bool`, `IpAddress`/`NotIpAddress`
+  (IPv4 CIDR, exact via bitvector encoding). The solver searches over all request contexts and
+  counterexamples include the context (`with context aws:multifactorauthpresent = true, …`);
+  invariants can pin context with a `where:` clause
+- Resource-based policies (e.g. bucket policies) with `Principal: "*"` or exact ARNs, unioned with
+  identity-based grants; `--check-anonymous` verifies invariants for an unauthenticated principal
+  (catches public grants)
+- Terraform plans: inline policies, managed policies via attachments (resolved by ARN or
+  configuration reference), and `aws_s3_bucket_policy`
 - Invariant exemptions by exact ARN or glob
 
-**Soundness note:** `Condition` blocks are not yet modeled — a condition-guarded Allow is treated
-as always in effect. This over-approximates permissions, so iamprover may flag violations a
-condition would prevent (false positives), but within the modeled fragment it will not miss one
-(no false negatives). Trust the `PASS`es; investigate the `FAIL`s.
+**Soundness note:** unsupported condition operators degrade safely — treated as always-true on
+Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
+flag violations a condition would prevent (false positives), but within the modeled fragment it
+will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAIL`s.
 
 ## Roadmap
 
-- **v0.2** — `Condition` modeling (IP, MFA, principal tags subset) · managed-policy attachments in the Terraform parser · resource-based policies (bucket policies)
 - **v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants
-- **v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis
+- **v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions
 
 ## Development
 

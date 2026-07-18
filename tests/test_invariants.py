@@ -65,4 +65,20 @@ def test_cli_end_to_end_on_examples(capsys):
     assert "[FAIL] prod-data-read-restricted" in out
     assert "ci-runner" in out
     assert "[PASS] audit-logs-untouchable" in out
-    assert "[PASS] no-iam-mutation" in out
+    assert "[PASS] no-iam-mutation-without-mfa" in out
+    assert "[PASS] prod-data-never-public" in out
+
+
+def test_cli_check_anonymous_on_examples(capsys):
+    code = main(
+        [
+            "verify",
+            "--account", str(EXAMPLES / "account.json"),
+            "--invariants", str(EXAMPLES / "invariants.yaml"),
+            "--check-anonymous",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 2
+    # public-site grant must not leak into prod-data even for anonymous
+    assert "[PASS] prod-data-never-public" in out

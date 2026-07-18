@@ -1,14 +1,15 @@
 import z3
 
+from iamprover.engine.context import Context
 from iamprover.engine.encoder import allowed
 from iamprover.model import Policy, Principal, Statement
 
 
-def is_allowed(principal: Principal, action: str, resource: str) -> bool:
+def is_allowed(principal: Principal, action: str, resource: str, resource_policies=()) -> bool:
     a, r = z3.Strings("a r")
     solver = z3.Solver()
     solver.add(a == z3.StringVal(action.lower()), r == z3.StringVal(resource))
-    solver.add(allowed(principal, a, r))
+    solver.add(allowed(principal, a, r, Context(), list(resource_policies)))
     return solver.check() == z3.sat
 
 
