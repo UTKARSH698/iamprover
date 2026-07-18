@@ -1,0 +1,73 @@
+name: "iamprover"
+description: >-
+  Formally verify AWS IAM security invariants over a Terraform plan or account
+  model using an SMT solver (Z3). Fails the build with concrete counterexample
+  traces — proofs, not pattern-matching.
+author: "Utkarsh Batham"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  invariants:
+    description: "Path to the invariant spec YAML"
+    required: false
+    default: ""
+  tf-plan:
+    description: "Path to a Terraform plan JSON (`terraform show -json plan`)"
+    required: false
+    default: ""
+  account:
+    description: "Path to an account description JSON (principals + policies)"
+    required: false
+    default: ""
+  check-anonymous:
+    description: "Also verify invariants for an unauthenticated principal (catches public grants)"
+    required: false
+    default: "false"
+  privesc:
+    description: "Also verify the built-in privilege-escalation invariants"
+    required: false
+    default: "false"
+  privesc-unless:
+    description: "Whitespace-separated principal ARN globs exempt from the built-in privesc invariants"
+    required: false
+    default: ""
+  version:
+    description: "iamprover version to install (default: latest from PyPI)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install iamprover
+      shell: bash
+      env:
+        IAMPROVER_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$IAMPROVER_VERSION" ]; then
+          python3 -m pip install --quiet "iamprover==$IAMPROVER_VERSION"
+        else
+          python3 -m pip install --quiet iamprover
+        fi
+
+    - name: Verify invariants
+      shell: bash
+      # Inputs pass through env (not inline interpolation) to avoid shell injection.
+      env:
+        IN_INVARIANTS: ${{ inputs.invariants }}
+        IN_TF_PLAN: ${{ inputs['tf-plan'] }}
+        IN_ACCOUNT: ${{ inputs.account }}
+        IN_CHECK_ANONYMOUS: ${{ inputs['check-anonymous'] }}
+        IN_PRIVESC: ${{ inputs.privesc }}
+        IN_PRIVESC_UNLESS: ${{ inputs['privesc-unless'] }}
+      run: |
+        args=(verify)
+        if [ -n "$IN_TF_PLAN" ]; then args+=(--tf-plan "$IN_TF_PLAN"); fi
+        if [ -n "$IN_ACCOUNT" ]; then args+=(--account "$IN_ACCOUNT"); fi
+        if [ -n "$IN_INVARIANTS" ]; then args+=(--invariants "$IN_INVARIANTS"); fi
+        if [ "$IN_CHECK_ANONYMOUS" = "true" ]; then args+=(--check-anonymous); fi
+        if [ "$IN_PRIVESC" = "true" ]; then args+=(--privesc); fi
+        for glob in $IN_PRIVESC_UNLESS; do args+=(--privesc-unless "$glob"); done
+        iamprover "${args[@]}"

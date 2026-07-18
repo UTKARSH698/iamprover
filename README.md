@@ -53,6 +53,19 @@ terraform show -json plan > plan.json
 iamprover verify --tf-plan plan.json --invariants invariants.yaml   # exit 2 on violation
 ```
 
+3. Or use the GitHub Action to gate every pull request:
+
+```yaml
+- uses: hashicorp/setup-terraform@v3
+- run: terraform plan -out plan && terraform show -json plan > plan.json
+- uses: UTKARSH698/iamprover@v0.3.0
+  with:
+    tf-plan: plan.json
+    invariants: invariants.yaml
+    privesc: "true"                # built-in privilege-escalation invariants
+    privesc-unless: "arn:aws:iam::*:role/admin-*"
+```
+
 Invariants are declared in YAML:
 
 ```yaml
@@ -64,9 +77,39 @@ invariants:
       resource: "arn:aws:s3:::prod-data/*"
     unless_principal:
       - "arn:aws:iam::111122223333:role/data-team"
+
+  - id: no-passrole-lambda-escalation
+    description: No single principal may both pass a role and create a Lambda
+    forbid_chain:                  # fails only if ONE principal can do EVERY step
+      - action: "iam:PassRole"
+      - action: "lambda:CreateFunction"
 ```
 
-## What is modeled (v0.2)
+## Privilege-escalation invariants (v0.3)
+
+`--privesc` enables a built-in catalog of the well-known AWS IAM escalation
+paths — policy-version rewrites, credential minting, policy attachment,
+trust-policy rewrites, code hijacking, and the `iam:PassRole` chains into
+Lambda, EC2, CloudFormation, Glue, and SageMaker:
+
+```bash
+iamprover verify --tf-plan plan.json --privesc \
+    --privesc-unless "arn:aws:iam::111122223333:role/ops-admin"
+```
+
+Chains are verified compositionally: `privesc-passrole-ec2` fails only if the
+solver finds a **single principal** allowed *both* `iam:PassRole` *and*
+`ec2:RunInstances` (each step checked as an independent request, so condition
+gates still count) — counterexamples list every step:
+
+```
+[FAIL] privesc-passrole-ec2 — Principal can launch an EC2 instance with a privileged instance profile ...
+    counterexample: arn:aws:iam::111122223333:role/dev
+        step 1: iam:passrole on *
+        step 2: ec2:runinstances on *
+```
+
+## What is modeled (v0.3)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
@@ -81,6 +124,8 @@ invariants:
 - Terraform plans: inline policies, managed policies via attachments (resolved by ARN or
   configuration reference), and `aws_s3_bucket_policy`
 - Invariant exemptions by exact ARN or glob
+- Multi-step `forbid_chain` invariants (one principal holding every step) and a
+  built-in privilege-escalation catalog (`--privesc`)
 
 **Soundness note:** unsupported condition operators degrade safely — treated as always-true on
 Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
@@ -89,7 +134,7 @@ will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAI
 
 ## Roadmap
 
-- **v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants
+- ~~**v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants~~ ✅ shipped
 - **v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions
 
 ## Development

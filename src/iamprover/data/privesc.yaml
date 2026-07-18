@@ -1,0 +1,100 @@
+# Built-in privilege-escalation invariants (enable with --privesc).
+#
+# Each one forbids a permission (or a chain of permissions held by a single
+# principal) that is sufficient to escalate to broader access. Catalog follows
+# the well-known AWS IAM escalation paths documented by Rhino Security Labs.
+# Exempt intentionally-privileged principals with --privesc-unless.
+
+invariants:
+  - id: privesc-policy-version
+    description: >-
+      Principal can grant itself admin by writing a new default policy version
+    forbid:
+      actions: ["iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion"]
+      resources: ["*"]
+
+  - id: privesc-credential-creation
+    description: >-
+      Principal can mint credentials for other identities
+      (access keys or console login profiles)
+    forbid:
+      actions: ["iam:CreateAccessKey", "iam:CreateLoginProfile", "iam:UpdateLoginProfile"]
+      resources: ["*"]
+
+  - id: privesc-policy-attachment
+    description: >-
+      Principal can attach or inline arbitrary policies onto users, roles, or
+      groups (or join a more-privileged group)
+    forbid:
+      actions:
+        - "iam:AttachUserPolicy"
+        - "iam:AttachRolePolicy"
+        - "iam:AttachGroupPolicy"
+        - "iam:PutUserPolicy"
+        - "iam:PutRolePolicy"
+        - "iam:PutGroupPolicy"
+        - "iam:AddUserToGroup"
+      resources: ["*"]
+
+  - id: privesc-assume-role-policy
+    description: >-
+      Principal can rewrite a role's trust policy to make it assumable by itself
+    forbid:
+      actions: ["iam:UpdateAssumeRolePolicy"]
+      resources: ["*"]
+
+  - id: privesc-passrole-lambda
+    description: >-
+      Principal can pass a privileged role to a new or reconfigured Lambda it
+      controls, then execute with that role's permissions
+    forbid_chain:
+      - action: "iam:PassRole"
+      - actions: ["lambda:CreateFunction", "lambda:UpdateFunctionConfiguration"]
+
+  - id: privesc-passrole-ec2
+    description: >-
+      Principal can launch an EC2 instance with a privileged instance profile
+      and act with its role from the instance
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "ec2:RunInstances"
+
+  - id: privesc-passrole-cloudformation
+    description: >-
+      Principal can hand a privileged role to a CloudFormation stack that
+      creates arbitrary resources on its behalf
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "cloudformation:CreateStack"
+
+  - id: privesc-passrole-glue
+    description: >-
+      Principal can attach a privileged role to a Glue dev endpoint and use its
+      credentials from the endpoint
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "glue:CreateDevEndpoint"
+
+  - id: privesc-passrole-sagemaker
+    description: >-
+      Principal can attach a privileged role to a SageMaker notebook instance
+      and use its credentials from the notebook
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "sagemaker:CreateNotebookInstance"
+
+  - id: privesc-lambda-code-hijack
+    description: >-
+      Principal can replace the code of an existing Lambda and inherit its
+      execution role
+    forbid:
+      actions: ["lambda:UpdateFunctionCode"]
+      resources: ["*"]
+
+  - id: privesc-glue-endpoint-hijack
+    description: >-
+      Principal can update an existing Glue dev endpoint (e.g. its SSH key) and
+      reach the credentials of its attached role
+    forbid:
+      actions: ["glue:UpdateDevEndpoint"]
+      resources: ["*"]

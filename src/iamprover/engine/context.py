@@ -16,19 +16,22 @@ SOURCE_IP_KEY = "aws:sourceip"
 
 
 class Context:
-    def __init__(self) -> None:
+    def __init__(self, prefix: str = "") -> None:
+        # Distinct prefixes keep chain steps' contexts independent: each step is
+        # a separate request, so sharing Z3 variables would under-approximate.
+        self.prefix = prefix
         self.string_vars: dict[str, z3.SeqRef] = {}
         self.ip_var: z3.BitVecRef | None = None
 
     def string(self, key: str) -> z3.SeqRef:
         key = key.lower()
         if key not in self.string_vars:
-            self.string_vars[key] = z3.String(f"ctx[{key}]")
+            self.string_vars[key] = z3.String(f"{self.prefix}ctx[{key}]")
         return self.string_vars[key]
 
     def source_ip(self) -> z3.BitVecRef:
         if self.ip_var is None:
-            self.ip_var = z3.BitVec(f"ctx[{SOURCE_IP_KEY}]", 32)
+            self.ip_var = z3.BitVec(f"{self.prefix}ctx[{SOURCE_IP_KEY}]", 32)
         return self.ip_var
 
     def constrain(self, key: str, value: str) -> z3.BoolRef:
