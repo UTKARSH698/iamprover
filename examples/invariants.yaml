@@ -1,0 +1,22 @@
+# Security invariants for the example account.
+# Run: iamprover verify --account examples/account.json --invariants examples/invariants.yaml
+invariants:
+  - id: prod-data-read-restricted
+    description: Only the data-team role may read objects in the prod-data bucket
+    forbid:
+      action: "s3:GetObject"
+      resource: "arn:aws:s3:::prod-data/*"
+    unless_principal:
+      - "arn:aws:iam::111122223333:role/data-team"
+
+  - id: audit-logs-untouchable
+    description: No principal may perform any S3 action on the audit-logs bucket
+    forbid:
+      action: "s3:*"
+      resource: "arn:aws:s3:::audit-logs/*"
+
+  - id: no-iam-mutation
+    description: No principal may mutate IAM (privilege-escalation surface)
+    forbid:
+      actions: ["iam:Create*", "iam:Put*", "iam:Attach*", "iam:Update*"]
+      resource: "*"
