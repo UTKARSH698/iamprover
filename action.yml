@@ -1,8 +1,7 @@
 name: "iamprover"
 description: >-
-  Formally verify AWS IAM security invariants over a Terraform plan or account
-  model using an SMT solver (Z3). Fails the build with concrete counterexample
-  traces — proofs, not pattern-matching.
+  Prove AWS IAM security invariants with an SMT solver (Z3). Fails the build
+  with concrete counterexample traces.
 author: "Utkarsh Batham"
 branding:
   icon: "shield"
