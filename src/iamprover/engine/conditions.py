@@ -13,7 +13,7 @@ import ipaddress
 import z3
 
 from iamprover.engine.context import SOURCE_IP_KEY, Context
-from iamprover.engine.patterns import matches_any
+from iamprover.engine.patterns import has_variable, matches_any
 from iamprover.model import Condition
 
 
@@ -28,6 +28,12 @@ def _cidr_term(ctx: Context, value: str) -> z3.BoolRef | None:
 
 
 def encode_condition(cond: Condition, ctx: Context) -> z3.BoolRef | None:
+    # A policy variable in a condition value (e.g. StringEquals s3:prefix
+    # "${aws:username}/") can't be pinned, so treat the whole condition as
+    # unknown and let the caller apply the sound default.
+    if any(has_variable(v) for v in cond.values):
+        return None
+
     op = cond.operator
     negated = False
     if op.startswith("StringNot") or op.startswith("ArnNot") or op == "NotIpAddress":

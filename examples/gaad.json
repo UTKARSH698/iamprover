@@ -1,0 +1,101 @@
+{
+  "UserDetailList": [
+    {
+      "Arn": "arn:aws:iam::111122223333:user/alice",
+      "UserName": "alice",
+      "GroupList": ["developers"],
+      "UserPolicyList": [
+        {
+          "PolicyName": "self-prefix",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::team-data/${aws:username}/*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": []
+    }
+  ],
+  "GroupDetailList": [
+    {
+      "Arn": "arn:aws:iam::111122223333:group/developers",
+      "GroupName": "developers",
+      "GroupPolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "read-logs", "PolicyArn": "arn:aws:iam::111122223333:policy/read-logs"}
+      ]
+    }
+  ],
+  "RoleDetailList": [
+    {
+      "Arn": "arn:aws:iam::111122223333:role/partner-access",
+      "RoleName": "partner-access",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::999988887777:root"},
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": []
+    },
+    {
+      "Arn": "arn:aws:iam::111122223333:role/vendor-scoped",
+      "RoleName": "vendor-scoped",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::444455556666:root"},
+            "Action": "sts:AssumeRole",
+            "Condition": {"StringEquals": {"sts:ExternalId": "vendor-shared-secret"}}
+          }
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": []
+    },
+    {
+      "Arn": "arn:aws:iam::111122223333:role/oops-public",
+      "RoleName": "oops-public",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": "*", "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": []
+    }
+  ],
+  "Policies": [
+    {
+      "Arn": "arn:aws:iam::111122223333:policy/read-logs",
+      "PolicyName": "read-logs",
+      "DefaultVersionId": "v1",
+      "PolicyVersionList": [
+        {
+          "VersionId": "v1",
+          "IsDefaultVersion": true,
+          "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "logs:GetLogEvents", "Resource": "*"}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

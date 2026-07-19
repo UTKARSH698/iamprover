@@ -86,7 +86,9 @@ def load_account(path: str | Path) -> Account:
             parse_policy_document(pol.get("name", "inline"), pol["document"])
             for pol in p.get("policies", [])
         ]
-        principals.append(Principal(arn=p["arn"], policies=policies))
+        trust = p.get("trust_policy")
+        trust_policy = parse_policy_document("trust", trust) if trust else None
+        principals.append(Principal(arn=p["arn"], policies=policies, trust_policy=trust_policy))
     resource_policies = [
         parse_policy_document(pol.get("name", "resource-policy"), pol["document"])
         for pol in data.get("resource_policies", [])

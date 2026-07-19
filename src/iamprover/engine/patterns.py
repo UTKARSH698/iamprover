@@ -2,9 +2,28 @@
 
 from __future__ import annotations
 
+import re
+
 import z3
 
 _ANY_CHAR = z3.AllChar(z3.ReSort(z3.StringSort()))
+_VARIABLE_RE = re.compile(r"\$\{[^}]*\}")
+
+
+def expand_variables(pattern: str) -> str:
+    """Replace IAM policy variables (`${aws:username}`, `${aws:PrincipalTag/x}`,
+    `${*}`, ...) with `*`.
+
+    We cannot know a variable's runtime value, so we widen it to `*`. In a
+    positive Action/Resource this over-approximates the permission (sound: no
+    false negatives). Callers must NOT use this for NotAction/NotResource, where
+    widening would shrink the allow set — see encoder for that handling.
+    """
+    return _VARIABLE_RE.sub("*", pattern)
+
+
+def has_variable(text: str) -> bool:
+    return "${" in text
 
 
 def iam_pattern_to_re(pattern: str, case_insensitive: bool = False) -> z3.ReRef:

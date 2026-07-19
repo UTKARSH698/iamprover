@@ -21,6 +21,18 @@ inputs:
     description: "Path to an account description JSON (principals + policies)"
     required: false
     default: ""
+  gaad:
+    description: "Path to a live account snapshot (`aws iam get-account-authorization-details`)"
+    required: false
+    default: ""
+  check-trust:
+    description: "Analyze role trust policies for cross-account / public assume-role grants"
+    required: false
+    default: "false"
+  trusted-account:
+    description: "Whitespace-separated external account ids to allowlist for --check-trust"
+    required: false
+    default: ""
   check-anonymous:
     description: "Also verify invariants for an unauthenticated principal (catches public grants)"
     required: false
@@ -59,15 +71,21 @@ runs:
         IN_INVARIANTS: ${{ inputs.invariants }}
         IN_TF_PLAN: ${{ inputs['tf-plan'] }}
         IN_ACCOUNT: ${{ inputs.account }}
+        IN_GAAD: ${{ inputs.gaad }}
         IN_CHECK_ANONYMOUS: ${{ inputs['check-anonymous'] }}
         IN_PRIVESC: ${{ inputs.privesc }}
         IN_PRIVESC_UNLESS: ${{ inputs['privesc-unless'] }}
+        IN_CHECK_TRUST: ${{ inputs['check-trust'] }}
+        IN_TRUSTED_ACCOUNT: ${{ inputs['trusted-account'] }}
       run: |
         args=(verify)
         if [ -n "$IN_TF_PLAN" ]; then args+=(--tf-plan "$IN_TF_PLAN"); fi
         if [ -n "$IN_ACCOUNT" ]; then args+=(--account "$IN_ACCOUNT"); fi
+        if [ -n "$IN_GAAD" ]; then args+=(--gaad "$IN_GAAD"); fi
         if [ -n "$IN_INVARIANTS" ]; then args+=(--invariants "$IN_INVARIANTS"); fi
         if [ "$IN_CHECK_ANONYMOUS" = "true" ]; then args+=(--check-anonymous); fi
         if [ "$IN_PRIVESC" = "true" ]; then args+=(--privesc); fi
         for glob in $IN_PRIVESC_UNLESS; do args+=(--privesc-unless "$glob"); done
+        if [ "$IN_CHECK_TRUST" = "true" ]; then args+=(--check-trust); fi
+        for acct in $IN_TRUSTED_ACCOUNT; do args+=(--trusted-account "$acct"); done
         iamprover "${args[@]}"

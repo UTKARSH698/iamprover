@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from iamprover.engine.solver import InvariantResult
+from iamprover.engine.trust import TrustFinding
 
 
 def render_text(results: list[InvariantResult]) -> str:
@@ -31,6 +32,45 @@ def render_text(results: list[InvariantResult]) -> str:
         + (f", {failed} violated" if failed else " — no violations")
     )
     return "\n".join(lines)
+
+
+def render_trust_text(findings: list[TrustFinding]) -> str:
+    if not findings:
+        return "no cross-account trust findings"
+    lines = []
+    for f in findings:
+        tag = "TRUST-INFO" if f.guarded else "TRUST-FAIL"
+        who = "any principal (*)" if f.public else f.trusted
+        lines.append(f"[{tag}] {f.role_arn}")
+        lines.append(f"        assumable by {who}")
+        if f.guarded:
+            lines.append(f"        guarded by   {', '.join(f.guard_keys)}")
+        else:
+            lines.append("        UNGUARDED — no ExternalId / org / source-account condition")
+    unguarded = sum(1 for f in findings if not f.guarded)
+    lines.append("")
+    lines.append(
+        f"{len(findings)} cross-account trust grant(s), {unguarded} unguarded"
+        if unguarded
+        else f"{len(findings)} cross-account trust grant(s), all guarded"
+    )
+    return "\n".join(lines)
+
+
+def render_trust_json(findings: list[TrustFinding]) -> str:
+    return json.dumps(
+        [
+            {
+                "role": f.role_arn,
+                "trusted": f.trusted,
+                "public": f.public,
+                "guarded": f.guarded,
+                "guard_keys": f.guard_keys,
+            }
+            for f in findings
+        ],
+        indent=2,
+    )
 
 
 def render_json(results: list[InvariantResult]) -> str:

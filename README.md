@@ -53,12 +53,19 @@ terraform show -json plan > plan.json
 iamprover verify --tf-plan plan.json --invariants invariants.yaml   # exit 2 on violation
 ```
 
-3. Or use the GitHub Action to gate every pull request:
+3. Or verify a **live account** — no Terraform required:
+
+```bash
+aws iam get-account-authorization-details > gaad.json
+iamprover verify --gaad gaad.json --privesc --check-trust
+```
+
+4. Or use the GitHub Action to gate every pull request:
 
 ```yaml
 - uses: hashicorp/setup-terraform@v3
 - run: terraform plan -out plan && terraform show -json plan > plan.json
-- uses: UTKARSH698/iamprover@v0.3.0
+- uses: UTKARSH698/iamprover@v0.4.0
   with:
     tf-plan: plan.json
     invariants: invariants.yaml
@@ -109,7 +116,44 @@ gates still count) — counterexamples list every step:
         step 2: ec2:runinstances on *
 ```
 
-## What is modeled (v0.3)
+## Live accounts & cross-account trust (v0.4)
+
+Point iamprover at a real account instead of a Terraform plan. `--gaad` ingests
+the output of `aws iam get-account-authorization-details`, flattening group
+memberships and managed-policy attachments and picking each policy's default
+version:
+
+```bash
+aws iam get-account-authorization-details > gaad.json
+iamprover verify --gaad gaad.json --invariants invariants.yaml --privesc
+```
+
+`--check-trust` analyzes every role's trust policy for grants that reach outside
+its own account. External or public (`Principal: "*"`) assume-role grants are
+flagged; a grant is "guarded" when scoped by `sts:ExternalId`,
+`aws:PrincipalOrgID`, `aws:SourceAccount`, or similar. Allowlist known partners
+with `--trusted-account`:
+
+```bash
+iamprover verify --gaad gaad.json --check-trust --trusted-account 444455556666
+```
+
+```
+[TRUST-FAIL] arn:aws:iam::111122223333:role/partner-access
+        assumable by arn:aws:iam::999988887777:root
+        UNGUARDED — no ExternalId / org / source-account condition
+[TRUST-INFO] arn:aws:iam::111122223333:role/vendor-scoped
+        assumable by arn:aws:iam::444455556666:root
+        guarded by   sts:ExternalId
+```
+
+**Policy variables** (`${aws:username}`, `${aws:PrincipalTag/team}`, …) are
+widened to `*` in `Action`/`Resource` and treated as unknown in conditions —
+always in the over-approximating direction, so they never hide a violation.
+Tag-based condition keys are modeled as free request-context variables the
+solver searches over.
+
+## What is modeled (v0.4)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
@@ -126,6 +170,9 @@ gates still count) — counterexamples list every step:
 - Invariant exemptions by exact ARN or glob
 - Multi-step `forbid_chain` invariants (one principal holding every step) and a
   built-in privilege-escalation catalog (`--privesc`)
+- Live-account ingestion (`--gaad`) with group/managed-policy flattening;
+  cross-account trust analysis (`--check-trust`); policy variables and
+  tag-based condition keys
 
 **Soundness note:** unsupported condition operators degrade safely — treated as always-true on
 Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
@@ -135,7 +182,8 @@ will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAI
 ## Roadmap
 
 - ~~**v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants~~ ✅ shipped
-- **v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions
+- ~~**v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions~~ ✅ shipped
+- **v0.5** — permission boundaries and SCPs · access-analyzer-style reachability across the full principal graph
 
 ## Development
 

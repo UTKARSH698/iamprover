@@ -33,6 +33,14 @@ class Policy:
 class Principal:
     arn: str
     policies: list[Policy]
+    # Role trust policy (AssumeRolePolicyDocument); None for users/groups.
+    trust_policy: Policy | None = None
+
+    @property
+    def account_id(self) -> str | None:
+        """The 12-digit account id embedded in an `arn:aws:iam::<id>:...` ARN."""
+        parts = self.arn.split(":")
+        return parts[4] if len(parts) >= 5 and parts[4] else None
 
 
 @dataclass
