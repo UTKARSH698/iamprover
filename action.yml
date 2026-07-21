@@ -52,6 +52,14 @@ inputs:
     description: "Whitespace-separated RCP document file paths"
     required: false
     default: ""
+  closure:
+    description: "Closure relation invariants extend over (none | assume-role)"
+    required: false
+    default: ""
+  max-hops:
+    description: "Max chain length for closure=assume-role (default: 4)"
+    required: false
+    default: ""
   version:
     description: "iamprover version to install (default: latest from PyPI)"
     required: false
@@ -86,6 +94,8 @@ runs:
         IN_TRUSTED_ACCOUNT: ${{ inputs['trusted-account'] }}
         IN_SCP: ${{ inputs.scp }}
         IN_RCP: ${{ inputs.rcp }}
+        IN_CLOSURE: ${{ inputs.closure }}
+        IN_MAX_HOPS: ${{ inputs['max-hops'] }}
       run: |
         args=(verify)
         if [ -n "$IN_TF_PLAN" ]; then args+=(--tf-plan "$IN_TF_PLAN"); fi
@@ -99,4 +109,6 @@ runs:
         for acct in $IN_TRUSTED_ACCOUNT; do args+=(--trusted-account "$acct"); done
         for f in $IN_SCP; do args+=(--scp "$f"); done
         for f in $IN_RCP; do args+=(--rcp "$f"); done
+        if [ -n "$IN_CLOSURE" ]; then args+=(--closure "$IN_CLOSURE"); fi
+        if [ -n "$IN_MAX_HOPS" ]; then args+=(--max-hops "$IN_MAX_HOPS"); fi
         iamprover "${args[@]}"

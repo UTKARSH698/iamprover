@@ -175,7 +175,41 @@ principal in an `--account` file, or they're resolved automatically from
 `PermissionsBoundaryArn` when using `--gaad`. Absent any of these, evaluation
 is identical to v0.4.
 
-## What is modeled (v0.5)
+## Whole-system reachability: transitive AssumeRole chains (v0.6)
+
+Every invariant above checks one principal's *direct* permissions. But a
+principal with no direct access can still reach it by assuming a role that
+has it: `--closure assume-role` widens every invariant to also cover
+principals reachable through `sts:AssumeRole` chains, not just direct grants:
+
+```bash
+iamprover verify --gaad gaad.json --invariants invariants.yaml --closure assume-role
+```
+
+An edge exists between two principals when the source's identity policy
+grants an assume-role action on the target *and* the target's trust policy
+allows the source — both sides are checked independently, matching how AWS
+actually evaluates `sts:AssumeRole`. Guarded trust conditions (`ExternalId`,
+org id, source account) don't block the edge: a guard is a value the
+assuming principal must supply, not a barrier to whether the relationship
+exists, so it stays on the over-approximating side. Counterexamples show the
+full chain:
+
+```
+[FAIL] no-s3-read
+    counterexample: arn:aws:iam::111122223333:role/a
+        step 1: sts:assumerole on arn:aws:iam::111122223333:role/b
+        step 2: s3:getobject on arn:aws:s3:::prod-data/x
+```
+
+Chain length is bounded by `--max-hops` (default 4) — AWS environments rarely
+need deep AssumeRole chains, so a bounded search gives predictable runtime on
+large live-account graphs while still catching realistic escalation paths.
+`--closure` is deliberately a mode, not a boolean, so future closure
+relations (e.g. `iam:PassRole` into service execution) can be added as new
+values without another flag.
+
+## What is modeled (v0.6)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
@@ -198,6 +232,9 @@ is identical to v0.4.
 - Permission boundaries (identity-path bound), SCPs (identity- and
   resource-path bound), and RCPs (resource-path bound), each as an
   independent, intersecting cap (`--scp`/`--rcp`, repeatable)
+- Whole-system reachability (`--closure assume-role`): invariants extend over
+  principals reachable through bounded `sts:AssumeRole` chains, not just
+  direct grants, with the chain shown in the counterexample
 
 **Soundness note:** unsupported condition operators degrade safely — treated as always-true on
 Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
@@ -209,7 +246,8 @@ will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAI
 - ~~**v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants~~ ✅ shipped
 - ~~**v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions~~ ✅ shipped
 - ~~**v0.5** — permission boundaries, SCPs, and RCPs as intersecting bounding layers~~ ✅ shipped
-- **v0.6** — access-analyzer-style reachability across the full principal graph (transitive `sts:AssumeRole` chains)
+- ~~**v0.6** — access-analyzer-style reachability across the full principal graph (transitive `sts:AssumeRole` chains)~~ ✅ shipped
+- **v0.7+** — richer closure relations beyond `sts:AssumeRole` (e.g. `iam:PassRole` into service execution), moving from a principal-to-principal graph toward a full identity/capability/resource attack graph
 
 ## Development
 

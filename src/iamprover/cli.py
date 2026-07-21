@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from iamprover.engine.reachability import DEFAULT_MAX_HOPS, ReachabilityIndex
 from iamprover.engine.solver import check_all
 from iamprover.engine.trust import analyze_trust
 from iamprover.invariants import load_invariants
@@ -89,6 +90,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Resource Control Policy document JSON, bounds resource-based access "
         "(repeatable; one file per applicable layer)",
     )
+    verify.add_argument(
+        "--closure",
+        choices=["none", "assume-role"],
+        default="none",
+        help="Widen every invariant to also cover principals reachable via a "
+        "closure relation, not just direct permissions. 'assume-role' follows "
+        "sts:AssumeRole chains (see --max-hops)",
+    )
+    verify.add_argument(
+        "--max-hops",
+        type=int,
+        default=DEFAULT_MAX_HOPS,
+        help=f"Max chain length for --closure assume-role (default: {DEFAULT_MAX_HOPS})",
+    )
 
     args = parser.parse_args(argv)
 
@@ -125,7 +140,10 @@ def main(argv: list[str] | None = None) -> int:
     sections = []
 
     if invariants:
-        results = check_all(account, invariants)
+        reachability = (
+            ReachabilityIndex(account, args.max_hops) if args.closure == "assume-role" else None
+        )
+        results = check_all(account, invariants, reachability)
         sections.append(render_json(results) if as_json else render_text(results))
         violation = violation or not all(r.passed for r in results)
 
