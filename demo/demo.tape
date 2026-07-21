@@ -32,3 +32,5 @@ Sleep 5s
 Type "# exit code 2 on violation - drop it into CI and it fails the PR"
 Enter
 Sleep 3s
+
+# (re-render trigger)
