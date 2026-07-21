@@ -18,9 +18,15 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install .
-      - uses: charmbracelet/vhs-action@v2
-        with:
-          path: demo/demo.tape
+      - name: Install vhs, ttyd, ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          curl -sL https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 -o ttyd
+          sudo install -m 755 ttyd /usr/local/bin/ttyd
+          go install github.com/charmbracelet/vhs@latest
+      - name: Render tape
+        run: ~/go/bin/vhs demo/demo.tape
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Render README demo GIF [skip ci]"
