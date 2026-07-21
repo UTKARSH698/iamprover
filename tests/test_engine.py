@@ -5,11 +5,13 @@ from iamprover.engine.encoder import allowed
 from iamprover.model import Policy, Principal, Statement
 
 
-def is_allowed(principal: Principal, action: str, resource: str, resource_policies=()) -> bool:
+def is_allowed(
+    principal: Principal, action: str, resource: str, resource_policies=(), scps=(), rcps=()
+) -> bool:
     a, r = z3.Strings("a r")
     solver = z3.Solver()
     solver.add(a == z3.StringVal(action.lower()), r == z3.StringVal(resource))
-    solver.add(allowed(principal, a, r, Context(), list(resource_policies)))
+    solver.add(allowed(principal, a, r, Context(), list(resource_policies), list(scps), list(rcps)))
     return solver.check() == z3.sat
 
 

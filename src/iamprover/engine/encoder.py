@@ -6,6 +6,16 @@ case-insensitive action matching; Condition blocks (supported subset — see
 engine.conditions); same-account resource-based policies whose grants union
 with identity-based allows. Unknown condition operators default to True on
 Allow and False on Deny so permissions are only ever over-approximated.
+
+Bounding layers (v0.5): permission boundaries, SCPs, and RCPs narrow what
+identity-/resource-based policies grant rather than granting anything
+themselves — each must independently contain a matching Allow, or that path
+is unavailable. A permission boundary bounds identity-based access only; an
+RCP bounds resource-based access only; an SCP bounds both (it applies
+account-wide). Multiple SCPs/RCPs (e.g. one per OU level) each act as an
+independent cap — all must allow (intersection) and any may deny (union),
+mirroring how AWS evaluates a policy hierarchy. When a bounding layer is
+absent, it imposes no restriction, so v0.4 inputs are evaluated identically.
 """
 
 from __future__ import annotations
@@ -59,27 +69,77 @@ def _grants_to(stmt: Statement, principal_arn: str) -> bool:
     return "*" in stmt.principals or principal_arn in stmt.principals
 
 
+def _allow_deny_terms(
+    statements: list[Statement], action: z3.SeqRef, resource: z3.SeqRef, ctx: Context
+) -> tuple[list[z3.BoolRef], list[z3.BoolRef]]:
+    allow_terms = []
+    deny_terms = []
+    for stmt in statements:
+        term = statement_matches(stmt, action, resource, ctx)
+        (allow_terms if stmt.effect == "Allow" else deny_terms).append(term)
+    return allow_terms, deny_terms
+
+
+def _bounding_allow_deny(
+    policies: list[Policy], action: z3.SeqRef, resource: z3.SeqRef, ctx: Context
+) -> tuple[z3.BoolRef, z3.BoolRef]:
+    """Combine independent bounding policies (permission boundary/SCP/RCP layers).
+
+    Each policy is a separate cap: it must contain a matching Allow for the
+    path to remain open (intersection), while a matching Deny in any one of
+    them closes it (union) — mirroring AWS's policy-hierarchy evaluation. No
+    policies at all means no restriction.
+    """
+    if not policies:
+        return z3.BoolVal(True), z3.BoolVal(False)
+    allow_parts = []
+    deny_parts = []
+    for policy in policies:
+        allow_terms, deny_terms = _allow_deny_terms(policy.statements, action, resource, ctx)
+        allow_parts.append(z3.Or(*allow_terms) if allow_terms else z3.BoolVal(False))
+        if deny_terms:
+            deny_parts.append(z3.Or(*deny_terms))
+    allow = z3.And(*allow_parts)
+    deny = z3.Or(*deny_parts) if deny_parts else z3.BoolVal(False)
+    return allow, deny
+
+
 def allowed(
     principal: Principal,
     action: z3.SeqRef,
     resource: z3.SeqRef,
     ctx: Context,
     resource_policies: list[Policy] = (),
+    scps: list[Policy] = (),
+    rcps: list[Policy] = (),
 ) -> z3.BoolRef:
-    allow_terms = []
-    deny_terms = []
-    for policy in principal.policies:
-        for stmt in policy.statements:
-            term = statement_matches(stmt, action, resource, ctx)
-            (allow_terms if stmt.effect == "Allow" else deny_terms).append(term)
+    identity_statements = [s for policy in principal.policies for s in policy.statements]
+    identity_allow_terms, identity_deny_terms = _allow_deny_terms(
+        identity_statements, action, resource, ctx
+    )
 
-    for policy in resource_policies:
-        for stmt in policy.statements:
-            if not _grants_to(stmt, principal.arn):
-                continue
-            term = statement_matches(stmt, action, resource, ctx)
-            (allow_terms if stmt.effect == "Allow" else deny_terms).append(term)
+    resource_statements = [
+        s
+        for policy in resource_policies
+        for s in policy.statements
+        if _grants_to(s, principal.arn)
+    ]
+    resource_allow_terms, resource_deny_terms = _allow_deny_terms(
+        resource_statements, action, resource, ctx
+    )
 
-    allows = z3.Or(*allow_terms) if allow_terms else z3.BoolVal(False)
-    denies = z3.Or(*deny_terms) if deny_terms else z3.BoolVal(False)
-    return z3.And(allows, z3.Not(denies))
+    identity_allow = z3.Or(*identity_allow_terms) if identity_allow_terms else z3.BoolVal(False)
+    identity_deny = z3.Or(*identity_deny_terms) if identity_deny_terms else z3.BoolVal(False)
+    resource_allow = z3.Or(*resource_allow_terms) if resource_allow_terms else z3.BoolVal(False)
+    resource_deny = z3.Or(*resource_deny_terms) if resource_deny_terms else z3.BoolVal(False)
+
+    boundary_policies = [principal.permission_boundary] if principal.permission_boundary else []
+    boundary_allow, boundary_deny = _bounding_allow_deny(boundary_policies, action, resource, ctx)
+    scp_allow, scp_deny = _bounding_allow_deny(list(scps), action, resource, ctx)
+    rcp_allow, rcp_deny = _bounding_allow_deny(list(rcps), action, resource, ctx)
+
+    identity_path = z3.And(identity_allow, boundary_allow, scp_allow)
+    resource_path = z3.And(resource_allow, rcp_allow, scp_allow)
+    denies = z3.Or(identity_deny, resource_deny, boundary_deny, scp_deny, rcp_deny)
+
+    return z3.And(z3.Or(identity_path, resource_path), z3.Not(denies))

@@ -35,6 +35,8 @@ class Principal:
     policies: list[Policy]
     # Role trust policy (AssumeRolePolicyDocument); None for users/groups.
     trust_policy: Policy | None = None
+    # Bounds identity-based access only (a principal has at most one).
+    permission_boundary: Policy | None = None
 
     @property
     def account_id(self) -> str | None:
@@ -47,6 +49,11 @@ class Principal:
 class Account:
     principals: list[Principal]
     resource_policies: list[Policy] = field(default_factory=list)
+    # Service Control Policies: bound both identity- and resource-based access,
+    # account-wide. Each entry is one applicable SCP layer in the OU hierarchy.
+    scps: list[Policy] = field(default_factory=list)
+    # Resource Control Policies: bound resource-based access only.
+    rcps: list[Policy] = field(default_factory=list)
 
     def principal(self, arn: str) -> Principal:
         for p in self.principals:

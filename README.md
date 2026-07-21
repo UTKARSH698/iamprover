@@ -153,7 +153,29 @@ always in the over-approximating direction, so they never hide a violation.
 Tag-based condition keys are modeled as free request-context variables the
 solver searches over.
 
-## What is modeled (v0.4)
+## Bounding layers: permission boundaries, SCPs, RCPs (v0.5)
+
+Identity- and resource-based policies only *grant* access; permission
+boundaries, Service Control Policies (SCPs), and Resource Control Policies
+(RCPs) only *bound* it — each must independently contain a matching `Allow`
+or that path is closed, and an explicit `Deny` in any of them blocks access
+outright. A permission boundary bounds identity-based access only; an RCP
+bounds resource-based access only; an SCP bounds both, account-wide:
+
+```bash
+iamprover verify --account account.json --invariants invariants.yaml \
+    --scp org-scp.json --scp ou-scp.json --rcp account-rcp.json
+```
+
+`--scp`/`--rcp` are repeatable — pass one file per applicable layer (e.g. one
+per OU level) and each is treated as an independent cap, so the effective
+bound is their intersection while a deny in any one of them still applies.
+Permission boundaries attach per-principal: set `permission_boundary` on a
+principal in an `--account` file, or they're resolved automatically from
+`PermissionsBoundaryArn` when using `--gaad`. Absent any of these, evaluation
+is identical to v0.4.
+
+## What is modeled (v0.5)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
@@ -173,6 +195,9 @@ solver searches over.
 - Live-account ingestion (`--gaad`) with group/managed-policy flattening;
   cross-account trust analysis (`--check-trust`); policy variables and
   tag-based condition keys
+- Permission boundaries (identity-path bound), SCPs (identity- and
+  resource-path bound), and RCPs (resource-path bound), each as an
+  independent, intersecting cap (`--scp`/`--rcp`, repeatable)
 
 **Soundness note:** unsupported condition operators degrade safely — treated as always-true on
 Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
@@ -183,7 +208,8 @@ will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAI
 
 - ~~**v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants~~ ✅ shipped
 - ~~**v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions~~ ✅ shipped
-- **v0.5** — permission boundaries and SCPs · access-analyzer-style reachability across the full principal graph
+- ~~**v0.5** — permission boundaries, SCPs, and RCPs as intersecting bounding layers~~ ✅ shipped
+- **v0.6** — access-analyzer-style reachability across the full principal graph (transitive `sts:AssumeRole` chains)
 
 ## Development
 

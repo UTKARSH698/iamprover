@@ -62,7 +62,17 @@ def check_invariant(account: Account, invariant: Invariant) -> InvariantResult:
             solver.add(matches_any(resource, step.resources))
             for key, value in invariant.where.items():
                 solver.add(ctx.constrain(key, value))
-            solver.add(allowed(principal, action, resource, ctx, account.resource_policies))
+            solver.add(
+                allowed(
+                    principal,
+                    action,
+                    resource,
+                    ctx,
+                    account.resource_policies,
+                    account.scps,
+                    account.rcps,
+                )
+            )
             encoded.append((action, resource, ctx))
         if solver.check() == z3.sat:
             model = solver.model()

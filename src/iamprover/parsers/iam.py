@@ -70,13 +70,25 @@ def parse_policy_document(name: str, document: dict) -> Policy:
     return Policy(name=name, statements=[parse_statement(s) for s in raw_statements])
 
 
+def _parse_policy_list(entries: list[dict], default_name: str) -> list[Policy]:
+    return [
+        parse_policy_document(pol.get("name", default_name), pol["document"]) for pol in entries
+    ]
+
+
 def load_account(path: str | Path) -> Account:
     """Load an account description file.
 
     Format:
         {
-          "principals": [{"arn": "...", "policies": [{"name": "...", "document": {...}}]}],
-          "resource_policies": [{"name": "...", "document": {...}}]
+          "principals": [{
+            "arn": "...",
+            "policies": [{"name": "...", "document": {...}}],
+            "permission_boundary": {...}
+          }],
+          "resource_policies": [{"name": "...", "document": {...}}],
+          "scps": [{"name": "...", "document": {...}}],
+          "rcps": [{"name": "...", "document": {...}}]
         }
     """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -88,9 +100,30 @@ def load_account(path: str | Path) -> Account:
         ]
         trust = p.get("trust_policy")
         trust_policy = parse_policy_document("trust", trust) if trust else None
-        principals.append(Principal(arn=p["arn"], policies=policies, trust_policy=trust_policy))
-    resource_policies = [
-        parse_policy_document(pol.get("name", "resource-policy"), pol["document"])
-        for pol in data.get("resource_policies", [])
-    ]
-    return Account(principals=principals, resource_policies=resource_policies)
+        boundary = p.get("permission_boundary")
+        permission_boundary = (
+            parse_policy_document("permission-boundary", boundary) if boundary else None
+        )
+        principals.append(
+            Principal(
+                arn=p["arn"],
+                policies=policies,
+                trust_policy=trust_policy,
+                permission_boundary=permission_boundary,
+            )
+        )
+    resource_policies = _parse_policy_list(data.get("resource_policies", []), "resource-policy")
+    scps = _parse_policy_list(data.get("scps", []), "scp")
+    rcps = _parse_policy_list(data.get("rcps", []), "rcp")
+    return Account(
+        principals=principals, resource_policies=resource_policies, scps=scps, rcps=rcps
+    )
+
+
+def load_policy_list(paths: list[str]) -> list[Policy]:
+    """Load standalone SCP/RCP files for `--scp`/`--rcp`, one policy document per file."""
+    policies = []
+    for path in paths:
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+        policies.append(parse_policy_document(Path(path).stem, document))
+    return policies

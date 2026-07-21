@@ -8,7 +8,7 @@ from iamprover.engine.trust import analyze_trust
 from iamprover.invariants import load_invariants
 from iamprover.model import ANONYMOUS_ARN, Principal
 from iamprover.parsers.aws import load_gaad
-from iamprover.parsers.iam import load_account
+from iamprover.parsers.iam import load_account, load_policy_list
 from iamprover.parsers.terraform import load_tf_plan
 from iamprover.privesc import load_builtin_privesc
 from iamprover.report import (
@@ -73,6 +73,22 @@ def main(argv: list[str] | None = None) -> int:
         metavar="ACCOUNT_ID",
         help="Allowlist an external account id for --check-trust (repeatable)",
     )
+    verify.add_argument(
+        "--scp",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Service Control Policy document JSON, bounds identity- and "
+        "resource-based access account-wide (repeatable; one file per OU-level layer)",
+    )
+    verify.add_argument(
+        "--rcp",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Resource Control Policy document JSON, bounds resource-based access "
+        "(repeatable; one file per applicable layer)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -89,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         invariants = load_invariants(args.invariants) if args.invariants else []
         if args.privesc:
             invariants.extend(load_builtin_privesc(args.privesc_unless))
+        if args.scp:
+            account.scps = list(account.scps) + load_policy_list(args.scp)
+        if args.rcp:
+            account.rcps = list(account.rcps) + load_policy_list(args.rcp)
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR

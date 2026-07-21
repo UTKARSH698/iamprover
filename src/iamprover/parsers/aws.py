@@ -62,6 +62,14 @@ def _attached_policies(entry: dict, managed: dict[str, Policy]) -> list[Policy]:
     return out
 
 
+def _permission_boundary(entry: dict, managed: dict[str, Policy]) -> Policy | None:
+    """Resolve `PermissionsBoundary` (GAAD nests the ARN; the CLI ARN key varies)."""
+    boundary = entry.get("PermissionsBoundary")
+    arn = boundary.get("PermissionsBoundaryArn") if isinstance(boundary, dict) else None
+    arn = arn or entry.get("PermissionsBoundaryArn")
+    return managed.get(arn) if arn else None
+
+
 def load_gaad(path: str | Path) -> Account:
     gaad = json.loads(Path(path).read_text(encoding="utf-8"))
     managed = _managed_policies(gaad)
@@ -78,7 +86,13 @@ def load_gaad(path: str | Path) -> Account:
         policies = _inline_policies(user, "UserPolicyList") + _attached_policies(user, managed)
         for group_name in user.get("GroupList", []):
             policies.extend(group_policies.get(group_name, []))
-        principals.append(Principal(arn=user["Arn"], policies=policies))
+        principals.append(
+            Principal(
+                arn=user["Arn"],
+                policies=policies,
+                permission_boundary=_permission_boundary(user, managed),
+            )
+        )
 
     for role in gaad.get("RoleDetailList", []):
         policies = _inline_policies(role, "RolePolicyList") + _attached_policies(role, managed)
@@ -89,7 +103,12 @@ def load_gaad(path: str | Path) -> Account:
             else None
         )
         principals.append(
-            Principal(arn=role["Arn"], policies=policies, trust_policy=trust_policy)
+            Principal(
+                arn=role["Arn"],
+                policies=policies,
+                trust_policy=trust_policy,
+                permission_boundary=_permission_boundary(role, managed),
+            )
         )
 
     return Account(principals=principals)

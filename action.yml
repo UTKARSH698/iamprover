@@ -44,6 +44,14 @@ inputs:
     description: "Whitespace-separated principal ARN globs exempt from the built-in privesc invariants"
     required: false
     default: ""
+  scp:
+    description: "Whitespace-separated SCP document file paths (one per OU-level layer)"
+    required: false
+    default: ""
+  rcp:
+    description: "Whitespace-separated RCP document file paths"
+    required: false
+    default: ""
   version:
     description: "iamprover version to install (default: latest from PyPI)"
     required: false
@@ -76,6 +84,8 @@ runs:
         IN_PRIVESC_UNLESS: ${{ inputs['privesc-unless'] }}
         IN_CHECK_TRUST: ${{ inputs['check-trust'] }}
         IN_TRUSTED_ACCOUNT: ${{ inputs['trusted-account'] }}
+        IN_SCP: ${{ inputs.scp }}
+        IN_RCP: ${{ inputs.rcp }}
       run: |
         args=(verify)
         if [ -n "$IN_TF_PLAN" ]; then args+=(--tf-plan "$IN_TF_PLAN"); fi
@@ -87,4 +97,6 @@ runs:
         for glob in $IN_PRIVESC_UNLESS; do args+=(--privesc-unless "$glob"); done
         if [ "$IN_CHECK_TRUST" = "true" ]; then args+=(--check-trust); fi
         for acct in $IN_TRUSTED_ACCOUNT; do args+=(--trusted-account "$acct"); done
+        for f in $IN_SCP; do args+=(--scp "$f"); done
+        for f in $IN_RCP; do args+=(--rcp "$f"); done
         iamprover "${args[@]}"
