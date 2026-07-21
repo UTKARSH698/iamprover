@@ -2,7 +2,7 @@
 
 from iamprover.model import Condition, Policy, Statement
 
-from tests.test_engine import is_allowed, principal_with
+from test_engine import is_allowed, principal_with
 
 
 def _policy(name: str, statements: list[Statement]) -> Policy:
