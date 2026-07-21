@@ -26,13 +26,13 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from fnmatch import fnmatch
 
 import z3
 
 from iamprover.engine.context import Context
 from iamprover.engine.encoder import allowed
-from iamprover.model import Account, Principal
+from iamprover.engine.patterns import expand_variables, globs_intersect
+from iamprover.model import Account, Principal, Statement
 
 DEFAULT_MAX_HOPS = 4
 
@@ -49,6 +49,14 @@ class Chain:
     path: list[str]
 
 
+def _stmt_has_assume_action(stmt: Statement) -> bool:
+    return any(
+        globs_intersect(action.lower(), pattern)
+        for action in stmt.actions
+        for pattern in _ASSUME_ACTIONS
+    )
+
+
 def _trusts(role: Principal, candidate: Principal) -> bool:
     if role.trust_policy is None:
         return False
@@ -57,17 +65,32 @@ def _trusts(role: Principal, candidate: Principal) -> bool:
             continue
         if candidate.arn not in stmt.principals and "*" not in stmt.principals:
             continue
-        if any(
-            fnmatch(action.lower(), pattern) or action.lower() in ("sts:*", "*")
-            for action in stmt.actions
-            for pattern in _ASSUME_ACTIONS
-        ):
+        if _stmt_has_assume_action(stmt):
             return True
+    return False
+
+
+def _may_grant_assume(source: Principal, target_arn: str) -> bool:
+    """Syntactic prefilter mirroring solver._may_match_step: can any Allow
+    statement possibly grant an assume-role action on `target_arn`? False
+    proves the Z3 query below is unsat, so it can be skipped."""
+    for policy in source.policies:
+        for stmt in policy.statements:
+            if stmt.effect != "Allow":
+                continue
+            if not stmt.not_actions and not _stmt_has_assume_action(stmt):
+                continue
+            if stmt.not_resources or any(
+                globs_intersect(expand_variables(p), target_arn) for p in stmt.resources
+            ):
+                return True
     return False
 
 
 def _can_assume(source: Principal, target: Principal) -> bool:
     if not _trusts(target, source):
+        return False
+    if not _may_grant_assume(source, target.arn):
         return False
     a, r = z3.Strings("a r")
     for action in _ASSUME_ACTIONS:
@@ -80,14 +103,30 @@ def _can_assume(source: Principal, target: Principal) -> bool:
 
 
 def build_graph(account: Account) -> dict[str, list[str]]:
-    """Adjacency list of assume-role edges: source ARN -> reachable target ARNs."""
+    """Adjacency list of assume-role edges: source ARN -> reachable target ARNs.
+
+    Built trust-side-out: only principals a trust policy actually names (or
+    everyone, for `Principal: "*"`) are candidate sources, so cost scales with
+    the number of trust grants rather than all principal pairs.
+    """
     graph: dict[str, list[str]] = {p.arn: [] for p in account.principals}
-    for source in account.principals:
-        for target in account.principals:
-            if source.arn == target.arn:
+    by_arn = {p.arn: p for p in account.principals}
+    for target in account.principals:
+        if target.trust_policy is None:
+            continue
+        candidates: set[str] = set()
+        for stmt in target.trust_policy.statements:
+            if stmt.effect != "Allow" or not _stmt_has_assume_action(stmt):
                 continue
-            if _can_assume(source, target):
-                graph[source.arn].append(target.arn)
+            if "*" in stmt.principals:
+                candidates.update(arn for arn in by_arn if arn != target.arn)
+            else:
+                candidates.update(
+                    arn for arn in stmt.principals if arn in by_arn and arn != target.arn
+                )
+        for source_arn in sorted(candidates):
+            if _can_assume(by_arn[source_arn], target):
+                graph[source_arn].append(target.arn)
     return graph
 
 

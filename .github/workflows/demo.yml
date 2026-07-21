@@ -1,0 +1,27 @@
+name: demo-gif
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["demo/demo.tape"]
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install .
+      - uses: charmbracelet/vhs-action@v2
+        with:
+          path: demo/demo.tape
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Render README demo GIF [skip ci]"
+          file_pattern: demo/demo.gif

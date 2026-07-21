@@ -1,0 +1,68 @@
+{
+  "principals": [
+    {
+      "arn": "arn:aws:iam::111122223333:role/dev",
+      "policies": [
+        {
+          "name": "dev-can-assume-deploy",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "sts:AssumeRole",
+                "Resource": "arn:aws:iam::111122223333:role/deploy"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arn": "arn:aws:iam::111122223333:role/deploy",
+      "trust_policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": { "AWS": "arn:aws:iam::111122223333:role/dev" },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "policies": [
+        {
+          "name": "deploy-prod-read",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::prod-data/*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "arn": "arn:aws:iam::111122223333:role/data-team",
+      "policies": [
+        {
+          "name": "data-team-access",
+          "document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:ListBucket"],
+                "Resource": ["arn:aws:s3:::prod-data", "arn:aws:s3:::prod-data/*"]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

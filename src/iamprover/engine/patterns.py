@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 import z3
 
@@ -50,3 +51,32 @@ def matches_any(value: z3.SeqRef, patterns: list[str], case_insensitive: bool = 
     if not patterns:
         return z3.BoolVal(False)
     return z3.Or(*[z3.InRe(value, iam_pattern_to_re(p, case_insensitive)) for p in patterns])
+
+
+@lru_cache(maxsize=65536)
+def globs_intersect(p1: str, p2: str) -> bool:
+    """True iff some string matches both IAM wildcard patterns (`*`, `?`)."""
+    memo: dict[tuple[int, int], bool] = {}
+
+    def go(i: int, j: int) -> bool:
+        key = (i, j)
+        if key in memo:
+            return memo[key]
+        if i == len(p1) and j == len(p2):
+            result = True
+        elif i == len(p1):
+            result = all(c == "*" for c in p2[j:])
+        elif j == len(p2):
+            result = all(c == "*" for c in p1[i:])
+        elif p1[i] == "*":
+            result = go(i + 1, j) or go(i, j + 1)
+        elif p2[j] == "*":
+            result = go(i, j + 1) or go(i + 1, j)
+        elif p1[i] == "?" or p2[j] == "?" or p1[i] == p2[j]:
+            result = go(i + 1, j + 1)
+        else:
+            result = False
+        memo[key] = result
+        return result
+
+    return go(0, 0)

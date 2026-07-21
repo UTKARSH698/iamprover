@@ -8,11 +8,11 @@ from fnmatch import fnmatch
 import z3
 
 from iamprover.engine.context import Context
-from iamprover.engine.encoder import allowed
-from iamprover.engine.patterns import matches_any
+from iamprover.engine.encoder import _grants_to, allowed
+from iamprover.engine.patterns import expand_variables, globs_intersect, matches_any
 from iamprover.engine.reachability import Chain, ReachabilityIndex
-from iamprover.invariants import Invariant
-from iamprover.model import Account, Principal
+from iamprover.invariants import Invariant, Step
+from iamprover.model import Account, Principal, Statement
 
 
 @dataclass
@@ -44,10 +44,42 @@ def _exempt(principal_arn: str, exemptions: list[str]) -> bool:
     return any(fnmatch(principal_arn, pattern) for pattern in exemptions)
 
 
+def _may_match_step(stmts: list[Statement], step: Step) -> bool:
+    """Cheap syntactic prefilter: can any Allow statement's Action/Resource
+    patterns possibly intersect this step's? False proves `allowed()` is unsat
+    under the step's constraints (bounding layers and conditions only restrict
+    further), so the Z3 query can be skipped. Conservative on NotAction /
+    NotResource — they count as always possibly matching."""
+    for stmt in stmts:
+        if stmt.effect != "Allow":
+            continue
+        if not stmt.not_actions and not any(
+            globs_intersect(expand_variables(p).lower(), a.lower())
+            for p in stmt.actions
+            for a in step.actions
+        ):
+            continue
+        if stmt.not_resources or any(
+            globs_intersect(expand_variables(p), r)
+            for p in stmt.resources
+            for r in step.resources
+        ):
+            return True
+    return False
+
+
 def _check_principal(
     account: Account, principal: Principal, invariant: Invariant
 ) -> Counterexample | None:
     steps = invariant.steps()
+    grantable = [s for policy in principal.policies for s in policy.statements] + [
+        s
+        for policy in account.resource_policies
+        for s in policy.statements
+        if _grants_to(s, principal.arn)
+    ]
+    if not all(_may_match_step(grantable, step) for step in steps):
+        return None
     solver = z3.Solver()
     encoded: list[tuple[z3.SeqRef, z3.SeqRef, Context]] = []
     for i, step in enumerate(steps):
@@ -116,16 +148,25 @@ def check_invariant(
     account: Account, invariant: Invariant, reachability: ReachabilityIndex | None = None
 ) -> InvariantResult:
     result = InvariantResult(invariant=invariant, passed=True)
+    by_arn = {p.arn: p for p in account.principals}
+    # Direct-check results per principal; reused when the same principal
+    # recurs as a chain target across many sources.
+    cache: dict[str, Counterexample | None] = {}
+
+    def direct(arn: str) -> Counterexample | None:
+        if arn not in cache:
+            cache[arn] = _check_principal(account, by_arn[arn], invariant)
+        return cache[arn]
 
     for principal in account.principals:
         if _exempt(principal.arn, invariant.unless_principals):
             continue
-        ce = _check_principal(account, principal, invariant)
+        ce = direct(principal.arn)
         if ce is None and reachability is not None:
             for target_arn, chain in reachability.chains_from(principal.arn).items():
                 if _exempt(target_arn, invariant.unless_principals):
                     continue
-                target_ce = _check_principal(account, account.principal(target_arn), invariant)
+                target_ce = direct(target_arn)
                 if target_ce is not None:
                     ce = _prefix_with_chain(principal.arn, chain, target_ce)
                     break  # chains_from is nearest-first, so this is the shortest

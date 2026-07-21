@@ -1,6 +1,6 @@
 import z3
 
-from iamprover.engine.patterns import iam_pattern_to_re
+from iamprover.engine.patterns import globs_intersect, iam_pattern_to_re
 
 
 def matches(pattern: str, value: str, ci: bool = False) -> bool:
@@ -34,3 +34,30 @@ def test_case_insensitive_actions():
 def test_arn_pattern():
     assert matches("arn:aws:s3:::prod-*/*", "arn:aws:s3:::prod-data/reports/q1.csv")
     assert not matches("arn:aws:s3:::prod-*/*", "arn:aws:s3:::dev-data/x")
+
+
+def test_globs_intersect_literal_vs_wildcard():
+    assert globs_intersect("s3:GetObject", "s3:GetObject")
+    assert globs_intersect("s3:Get*", "s3:*")
+    assert globs_intersect("s3:*", "s3:GetObject")
+    assert not globs_intersect("s3:Get*", "iam:PassRole")
+    assert not globs_intersect("s3:GetObject", "s3:PutObject")
+
+
+def test_globs_intersect_both_wildcarded():
+    assert globs_intersect("s3:Get*", "s3:*Object")
+    assert globs_intersect("*", "iam:PassRole")
+    assert globs_intersect("arn:aws:s3:::prod-*/*", "arn:aws:s3:::prod-data/*")
+    assert not globs_intersect("arn:aws:s3:::prod-*", "arn:aws:s3:::dev-*")
+
+
+def test_globs_intersect_question_mark():
+    assert globs_intersect("s3:Get?bject", "s3:GetObject")
+    assert globs_intersect("s3:Get?bject", "s3:Get*")
+    assert not globs_intersect("s3:Get?bject", "s3:GetOObject")
+
+
+def test_globs_intersect_empty_and_star():
+    assert globs_intersect("", "")
+    assert globs_intersect("", "*")
+    assert not globs_intersect("", "a")

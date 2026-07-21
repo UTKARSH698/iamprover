@@ -7,6 +7,8 @@ IAM policy-evaluation semantics into an SMT solver ([Z3](https://github.com/Z3Pr
 **proves** that your declared security invariants hold — or hands you a **concrete counterexample**
 (principal, action, resource) showing exactly how they break.
 
+![iamprover demo](demo/demo.gif)
+
 ```
 [FAIL] prod-data-read-restricted — Only the data-team role may read the prod-data bucket
     counterexample: arn:aws:iam::111122223333:role/ci-runner
@@ -65,7 +67,7 @@ iamprover verify --gaad gaad.json --privesc --check-trust
 ```yaml
 - uses: hashicorp/setup-terraform@v3
 - run: terraform plan -out plan && terraform show -json plan > plan.json
-- uses: UTKARSH698/iamprover@v0.4.0
+- uses: UTKARSH698/iamprover@v0.6.0
   with:
     tf-plan: plan.json
     invariants: invariants.yaml
@@ -241,6 +243,24 @@ Allow and always-false on Deny — so permissions are only ever over-approximate
 flag violations a condition would prevent (false positives), but within the modeled fragment it
 will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAIL`s.
 
+## Performance
+
+A realistic 10,000-principal account — three invariants, full assume-role closure — verifies in
+under 2.5 s end-to-end, thanks to a sound syntactic prefilter that skips provably-unsatisfiable
+solver queries. Details, methodology, and worst-case numbers in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [`examples/README.md`](examples/README.md) | Guided walkthrough of every example, with real output |
+| [`docs/API.md`](docs/API.md) | Python API and full CLI reference |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Pipeline internals and the soundness invariant |
+| [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Measured runtime at 100 / 1k / 10k principals |
+| [`docs/COMPARISON.md`](docs/COMPARISON.md) | vs. Access Analyzer, Prowler, Checkov |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, the one rule (never under-approximate), module map |
+
 ## Roadmap
 
 - ~~**v0.3** — GitHub Action on the Marketplace · privilege-escalation chain detection (`iam:PassRole` → `lambda:CreateFunction`, `iam:CreateAccessKey`, …) as built-in invariants~~ ✅ shipped
@@ -254,7 +274,10 @@ will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAI
 ```bash
 pip install -e ".[dev]"
 pytest
+ruff check src tests scripts
 ```
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the module map and contribution expectations.
 
 ## License
 
