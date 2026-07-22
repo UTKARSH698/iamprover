@@ -29,7 +29,7 @@ resources, including every wildcard expansion.
 Individually-correct IAM policies compose into globally-unsafe states: a broad `s3:Get*` on one
 role quietly bypasses the least-privilege story your prod bucket policy tells. This tool grew out
 of research on exactly that failure mode —
-[*Security Invariants in Distributed Cloud Systems*](https://doi.org/10.5281/zenodo.20099386),
+[*Security Invariants in Distributed Cloud Systems*](https://doi.org/10.5281/zenodo.20686317),
 which model-checks how per-service security enforcement breaks under cross-service composition.
 `iamprover` applies the same idea to real cloud policies: declare system-level invariants, verify
 them mechanically, get violation traces when they fail.
