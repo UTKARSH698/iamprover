@@ -22,7 +22,8 @@ generic catalog could know about.
 **2. Whole-system composition, not per-policy analysis.**
 Access Analyzer reasons rigorously about one policy at a time. iamprover's unit of
 analysis is the *account*: identity policies, resource policies, permission boundaries,
-SCPs, RCPs, and transitive `sts:AssumeRole` chains, evaluated together the way AWS
+SCPs, RCPs, transitive `sts:AssumeRole` chains, and `iam:PassRole` hand-offs into
+compute services, evaluated together the way AWS
 composes them. Individually-correct policies that compose into a globally-unsafe state
 are exactly the failure mode it exists to catch.
 

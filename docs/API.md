@@ -14,7 +14,8 @@ from iamprover.engine.reachability import ReachabilityIndex
 account = load_account("examples/account.json")
 invariants = load_invariants("examples/invariants.yaml")
 
-reachability = ReachabilityIndex(account, max_hops=4)   # optional: --closure assume-role
+# optional: --closure; relations is any subset of ("assume-role", "pass-role")
+reachability = ReachabilityIndex(account, max_hops=4, relations=("assume-role", "pass-role"))
 results = check_all(account, invariants, reachability)
 
 for r in results:
@@ -132,8 +133,8 @@ iamprover verify (--account F | --tf-plan F | --gaad F) [options]
 | `--check-anonymous` | Also verify invariants for an unauthenticated principal |
 | `--scp F` | SCP document (repeatable; one file per OU-level layer) |
 | `--rcp F` | RCP document (repeatable) |
-| `--closure {none,assume-role}` | Widen invariants over a closure relation (default `none`) |
-| `--max-hops N` | Chain bound for `--closure assume-role` (default 4) |
+| `--closure {none,assume-role,pass-role,all}` | Widen invariants over a closure relation (default `none`) |
+| `--max-hops N` | Chain bound for `--closure` (default 4) |
 | `--format {text,json}` | Output format |
 
 Exit codes: `0` all proven · `1` input/usage error · `2` at least one violation or

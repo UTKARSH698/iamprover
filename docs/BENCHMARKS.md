@@ -61,6 +61,27 @@ Still linear (~13 ms × principals × invariants) — a 10k-principal, 10-invari
 worst-case run is ~20 minutes, tractable for a nightly job; the realistic case is
 seconds.
 
+## PassRole closure (v0.7)
+
+The synthetic accounts above contain no service-trusted roles, so they say nothing about
+`--closure pass-role`. A dedicated stress shape: the same 10k-principal mix, plus a Lambda
+execution role every 25 principals (400 roles) and a deployer every 50 (200 principals
+with **wildcard** `iam:PassRole` + `lambda:CreateFunction`) — a dense worst case where
+every deployer can pass every role, giving 80,400 real edges. Reproduce with
+`python scripts/benchmark.py --sizes 100 --passrole-sizes 1000 10000`.
+
+| principals | `--closure all` graph build | closure check (3 invariants) |
+|---|---|---|
+| 1,000 | 0.13 s | 0.23 s |
+| 10,000 | **2.34 s** | 2.52 s |
+
+A first cut issued one Z3 query per (deployer, role) pair and took **240 s** to build the
+10k graph. Two exact optimizations brought that to 2.3 s with an identical edge set:
+principals that cannot syntactically pass *any* role are dropped as sources up front, and
+a solver-free fast path decides PassRole/launch permission when it is provably granted (an
+unconditional matching Allow, no Deny that could touch the request, no permission
+boundary) — anything else still goes to Z3.
+
 ## Notes
 
 - Counterexample extraction is included in all timings.

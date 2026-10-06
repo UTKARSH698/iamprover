@@ -125,11 +125,13 @@ def _check_principal(
 
 
 def _prefix_with_chain(root_arn: str, chain: Chain, target_ce: Counterexample) -> Counterexample:
-    """Prepend the assume-role hops of `chain` to a violation found at its target,
+    """Prepend the closure hops of `chain` to a violation found at its target,
     reattributing it to the chain's root principal."""
+    hop_steps = chain.hops or [[("sts:assumerole", hop)] for hop in chain.path[1:]]
     hops = [
-        CounterexampleStep(action="sts:assumerole", resource=hop)
-        for hop in chain.path[1:]
+        CounterexampleStep(action=action, resource=resource)
+        for edge in hop_steps
+        for action, resource in edge
     ]
     final_steps = target_ce.steps or [
         CounterexampleStep(target_ce.action, target_ce.resource, target_ce.context)

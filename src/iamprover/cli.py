@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from iamprover.engine.reachability import DEFAULT_MAX_HOPS, ReachabilityIndex
+from iamprover.engine.reachability import DEFAULT_MAX_HOPS, RELATIONS, ReachabilityIndex
 from iamprover.engine.solver import check_all
 from iamprover.engine.trust import analyze_trust
 from iamprover.invariants import load_invariants
@@ -22,6 +22,13 @@ from iamprover.report import (
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_VIOLATIONS = 2
+
+# --closure value -> reachability relations it enables.
+CLOSURE_MODES = {
+    "assume-role": ("assume-role",),
+    "pass-role": ("pass-role",),
+    "all": RELATIONS,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,17 +99,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify.add_argument(
         "--closure",
-        choices=["none", "assume-role"],
+        choices=["none", *CLOSURE_MODES],
         default="none",
         help="Widen every invariant to also cover principals reachable via a "
         "closure relation, not just direct permissions. 'assume-role' follows "
-        "sts:AssumeRole chains (see --max-hops)",
+        "sts:AssumeRole chains; 'pass-role' follows iam:PassRole into Lambda, "
+        "EC2, CloudFormation, Glue, and SageMaker; 'all' follows both "
+        "(see --max-hops)",
     )
     verify.add_argument(
         "--max-hops",
         type=int,
         default=DEFAULT_MAX_HOPS,
-        help=f"Max chain length for --closure assume-role (default: {DEFAULT_MAX_HOPS})",
+        help=f"Max chain length for --closure (default: {DEFAULT_MAX_HOPS})",
     )
 
     args = parser.parse_args(argv)
@@ -141,7 +150,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if invariants:
         reachability = (
-            ReachabilityIndex(account, args.max_hops) if args.closure == "assume-role" else None
+            ReachabilityIndex(account, args.max_hops, CLOSURE_MODES[args.closure])
+            if args.closure != "none"
+            else None
         )
         results = check_all(account, invariants, reachability)
         sections.append(render_json(results) if as_json else render_text(results))

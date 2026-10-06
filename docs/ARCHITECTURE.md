@@ -116,21 +116,32 @@ the Z3 query entirely when no statement could possibly grant the forbidden actio
 
 ### 5. Reachability (`engine/reachability.py`)
 
-`--closure assume-role` extends every invariant over transitive `sts:AssumeRole` chains.
-This stage is **plain Python, deliberately not Z3**:
+`--closure` extends every invariant over principals another principal can come to act
+as. Traversal is **plain Python, deliberately not Z3**; Z3 only decides individual edges:
 
-1. **Graph build** — an edge `P → Q` exists iff P's identity policies grant an assume-role
-   action on Q (checked with the same `allowed()` encoder) *and* Q's trust policy names P.
-   The graph is built trust-side-out: only principals a trust policy actually names are
-   candidate sources, so cost scales with trust grants, not principal pairs.
+1. **Graph build** — two relations contribute edges `P → Q`:
+   - `assume-role`: P's identity policies grant an assume-role action on Q (checked with
+     the same `allowed()` encoder) *and* Q's trust policy names P. Built trust-side-out:
+     only principals a trust policy actually names are candidate sources, so cost scales
+     with trust grants, not principal pairs.
+   - `pass-role`: Q is a role whose trust policy admits a compute service (Lambda, EC2,
+     CloudFormation, Glue, SageMaker), P is allowed `iam:PassRole` on Q, *and* P is
+     allowed that service's launch action. The two permissions are independent requests,
+     and `iam:PassedToService` stays free context — both over-approximate. Only
+     principals that can syntactically pass *some* role are considered as sources, and an
+     exact fast path (unconditional matching Allow, no possibly-matching Deny, no
+     boundary) answers the common case without a solver call.
+
+   Each edge is labeled with the requests it costs (`sts:assumerole`, or `iam:passrole`
+   followed by the launch action), and those labels become counterexample steps.
 2. **Bounded BFS** — shortest chains from each source, bounded by `--max-hops`
    (default 4), with parent-pointer chain reconstruction.
 3. **Evaluation** — for a principal with no direct violation, reachable targets are checked
    nearest-first; the first violating target yields a counterexample whose steps are the
-   assume-role hops followed by the target's violation.
+   labeled hops followed by the target's violation.
 
-Keeping graph construction, traversal, and proof evaluation separate means future closure
-relations (e.g. `iam:PassRole` into service execution) slot in without touching the prover.
+Keeping graph construction, traversal, and proof evaluation separate is what let the
+v0.7 `pass-role` relation slot in without touching the prover: it only adds edges.
 
 ### 6. Trust analysis (`engine/trust.py`) and reporting (`report.py`)
 

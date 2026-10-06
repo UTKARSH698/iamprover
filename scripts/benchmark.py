@@ -94,6 +94,38 @@ def make_account(n: int) -> Account:
     return Account(principals=principals)
 
 
+def make_passrole_account(n: int) -> Account:
+    """make_account(n) plus a Lambda execution role every 25 principals and a
+    deployer with wildcard iam:PassRole + lambda:CreateFunction every 50 —
+    a dense worst case for --closure pass-role (every deployer reaches every role)."""
+    account = make_account(n)
+    for i, p in enumerate(account.principals):
+        if i % 25 == 3:
+            p.trust_policy = Policy(
+                name="trust",
+                statements=[
+                    Statement(
+                        effect="Allow",
+                        actions=["sts:AssumeRole"],
+                        principals=["service:lambda.amazonaws.com"],
+                    )
+                ],
+            )
+        if i % 50 == 11:
+            p.policies.append(
+                Policy(
+                    name=f"deploy-{i}",
+                    statements=[
+                        Statement(effect="Allow", actions=["iam:PassRole"], resources=["*"]),
+                        Statement(
+                            effect="Allow", actions=["lambda:CreateFunction"], resources=["*"]
+                        ),
+                    ],
+                )
+            )
+    return account
+
+
 INVARIANTS = [
     Invariant(
         id="prod-data-read-restricted",
@@ -131,6 +163,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sizes", type=int, nargs="+", default=[100, 1000, 10000])
     parser.add_argument("--closure-sizes", type=int, nargs="+", default=[100, 1000])
+    parser.add_argument(
+        "--passrole-sizes",
+        type=int,
+        nargs="*",
+        default=[],
+        help="Also run the --closure all stress account at these sizes",
+    )
     args = parser.parse_args()
 
     print(f"python {platform.python_version()} on {platform.system()} {platform.machine()}")
@@ -158,6 +197,19 @@ def main() -> None:
         g = f"{graph_t:.2f}s" if graph_t is not None else "—"
         c = f"{closure_t:.2f}s" if closure_t is not None else "—"
         print(f"| {n:,} | {direct:.2f}s | {g} | {c} |")
+
+    if args.passrole_sizes:
+        print("\n| principals | --closure all graph build | closure check |")
+        print("|---|---|---|")
+    for n in args.passrole_sizes:
+        account = make_passrole_account(n)
+        start = time.perf_counter()
+        index = ReachabilityIndex(account, relations=("assume-role", "pass-role"))
+        graph_t = time.perf_counter() - start
+        start = time.perf_counter()
+        check_all(account, INVARIANTS, index)
+        closure_t = time.perf_counter() - start
+        print(f"| {n:,} | {graph_t:.2f}s | {closure_t:.2f}s |")
 
 
 if __name__ == "__main__":

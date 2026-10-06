@@ -53,11 +53,11 @@ inputs:
     required: false
     default: ""
   closure:
-    description: "Closure relation invariants extend over (none | assume-role)"
+    description: "Closure relation invariants extend over (none | assume-role | pass-role | all)"
     required: false
     default: ""
   max-hops:
-    description: "Max chain length for closure=assume-role (default: 4)"
+    description: "Max chain length for closure (default: 4)"
     required: false
     default: ""
   version:

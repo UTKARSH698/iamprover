@@ -89,6 +89,27 @@ An edge requires *both* sides: the source's identity policy granting `sts:Assume
 the target *and* the target's trust policy naming the source — exactly how AWS evaluates
 it. Chains are bounded by `--max-hops` (default 4).
 
+### …and through `iam:PassRole` into Lambda
+
+[`passrole-account.json`](passrole-account.json) has a `dev` role that can't read S3
+either — but it can create Lambda functions and pass them the `etl-exec` role, which can.
+Its PassRole grant is even scoped with `iam:PassedToService`, which doesn't help:
+
+```bash
+iamprover verify --account passrole-account.json --invariants invariants.yaml --closure pass-role
+```
+
+```
+[FAIL] prod-data-read-restricted — Only the data-team role may read objects in the prod-data bucket
+    counterexample: arn:aws:iam::111122223333:role/dev
+        step 1: iam:passrole on arn:aws:iam::111122223333:role/etl-exec
+        step 2: lambda:createfunction on *
+        step 3: s3:getobject on arn:aws:s3:::prod-data/
+...
+```
+
+Use `--closure all` to follow both relations in one run.
+
 ## 4. Verify a live account
 
 [`gaad.json`](gaad.json) is a (miniature) snapshot in the format of
@@ -115,7 +136,7 @@ iamprover verify --tf-plan plan.json --invariants invariants.yaml   # exit 2 on 
 Or with the GitHub Action:
 
 ```yaml
-- uses: UTKARSH698/iamprover@v0.6.0
+- uses: UTKARSH698/iamprover@v0.7.0
   with:
     tf-plan: plan.json
     invariants: invariants.yaml

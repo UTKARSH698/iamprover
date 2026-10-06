@@ -67,7 +67,7 @@ iamprover verify --gaad gaad.json --privesc --check-trust
 ```yaml
 - uses: hashicorp/setup-terraform@v3
 - run: terraform plan -out plan && terraform show -json plan > plan.json
-- uses: UTKARSH698/iamprover@v0.6.0
+- uses: UTKARSH698/iamprover@v0.7.0
   with:
     tf-plan: plan.json
     invariants: invariants.yaml
@@ -207,11 +207,42 @@ full chain:
 Chain length is bounded by `--max-hops` (default 4) — AWS environments rarely
 need deep AssumeRole chains, so a bounded search gives predictable runtime on
 large live-account graphs while still catching realistic escalation paths.
-`--closure` is deliberately a mode, not a boolean, so future closure
-relations (e.g. `iam:PassRole` into service execution) can be added as new
-values without another flag.
+`--closure` is deliberately a mode, not a boolean, so new closure relations
+are new values rather than new flags — which is exactly how v0.7 added one.
 
-## What is modeled (v0.6)
+## PassRole into compute: `--closure pass-role` (v0.7)
+
+AssumeRole isn't the only way to borrow a role. A principal that can
+`iam:PassRole` a role to Lambda — and create a function — can run its own
+code with that role's permissions, without ever calling `sts:AssumeRole`.
+`--closure pass-role` adds those edges; `--closure all` follows both
+relations, so mixed chains (pass a role into Lambda, then assume another
+role from it) are found too:
+
+```bash
+iamprover verify --gaad gaad.json --invariants invariants.yaml --closure all
+```
+
+An edge into role R exists when R's trust policy admits a compute service
+(Lambda, EC2, CloudFormation, Glue, SageMaker), the source may
+`iam:PassRole` on R, *and* the source may launch that service. A
+`iam:PassedToService` condition on the PassRole grant doesn't hide the edge
+— it's free request context, kept on the over-approximating side:
+
+```
+[FAIL] prod-data-read-restricted
+    counterexample: arn:aws:iam::111122223333:role/dev
+        step 1: iam:passrole on arn:aws:iam::111122223333:role/etl-exec
+        step 2: lambda:createfunction on *
+        step 3: s3:getobject on arn:aws:s3:::prod-data/
+```
+
+Unlike the `--privesc` catalog's `privesc-passrole-*` checks — which flag
+*any* principal holding PassRole plus a launch action — closure ties the
+hand-off to the specific role passed, so it reports only the paths that
+actually reach a violation of *your* invariants.
+
+## What is modeled (v0.7)
 
 - Allow/Deny with explicit-deny-overrides-allow and default deny
 - `Action` / `NotAction` / `Resource` / `NotResource` with `*` and `?` wildcards
@@ -237,6 +268,10 @@ values without another flag.
 - Whole-system reachability (`--closure assume-role`): invariants extend over
   principals reachable through bounded `sts:AssumeRole` chains, not just
   direct grants, with the chain shown in the counterexample
+- `iam:PassRole` into compute (`--closure pass-role` / `all`): passing a role
+  to Lambda, EC2, CloudFormation, Glue, or SageMaker counts as reaching it,
+  checked against both the role's service trust and the caller's launch
+  permission
 
 **Soundness note:** unsupported condition operators degrade safely — treated as always-true on
 Allow and always-false on Deny — so permissions are only ever over-approximated: iamprover may
@@ -267,7 +302,8 @@ solver queries. Details, methodology, and worst-case numbers in
 - ~~**v0.4** — live-account ingestion via `aws iam get-account-authorization-details` · cross-account trust analysis · policy variables and tag-based conditions~~ ✅ shipped
 - ~~**v0.5** — permission boundaries, SCPs, and RCPs as intersecting bounding layers~~ ✅ shipped
 - ~~**v0.6** — access-analyzer-style reachability across the full principal graph (transitive `sts:AssumeRole` chains)~~ ✅ shipped
-- **v0.7+** — richer closure relations beyond `sts:AssumeRole` (e.g. `iam:PassRole` into service execution), moving from a principal-to-principal graph toward a full identity/capability/resource attack graph
+- ~~**v0.7** — `iam:PassRole` into service execution as a closure relation, composable with AssumeRole chains~~ ✅ shipped
+- **v0.8+** — more closure relations (code-hijack of existing functions/instances, `sts:GetFederationToken`), moving from a principal-to-principal graph toward a full identity/capability/resource attack graph
 
 ## Development
 
