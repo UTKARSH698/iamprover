@@ -32,7 +32,7 @@ for r in results:
 |---|---|---|
 | `parsers.iam.load_account(path)` | Account-description JSON (`principals` + `resource_policies` + `scps` + `rcps`) | `Account` |
 | `parsers.aws.load_gaad(path)` | `aws iam get-account-authorization-details` output | `Account` (groups/managed policies flattened, boundaries resolved) |
-| `parsers.terraform.load_tf_plan(path)` | `terraform show -json plan` output | `Account` |
+| `parsers.terraform.load_tf_plan(path, account_id=None)` | `terraform show -json plan` output | `Account` (see `.warnings`) |
 | `parsers.iam.load_policy_list(paths)` | Standalone policy-document JSON files | `list[Policy]` — assign to `account.scps` / `account.rcps` |
 | `parsers.iam.parse_policy_document(name, document)` | One policy document `dict` | `Policy` |
 
@@ -125,6 +125,7 @@ iamprover verify (--account F | --tf-plan F | --gaad F) [options]
 | `--account F` | Account-description JSON |
 | `--tf-plan F` | Terraform plan JSON (`terraform show -json plan`) |
 | `--gaad F` | Live snapshot (`aws iam get-account-authorization-details`) |
+| `--tf-account-id ID` | Account id for `--tf-plan` principal ARNs (default: inferred from the plan; else a placeholder, with a warning) |
 | `--invariants F` | Invariant spec YAML |
 | `--privesc` | Also verify the built-in privilege-escalation catalog |
 | `--privesc-unless ARN_GLOB` | Exempt principals from `--privesc` (repeatable) |
@@ -137,7 +138,9 @@ iamprover verify (--account F | --tf-plan F | --gaad F) [options]
 | `--max-hops N` | Chain bound for `--closure` (default 4) |
 | `--format {text,json}` | Output format |
 
-Exit codes: `0` all proven · `1` input/usage error · `2` at least one violation or
-unguarded trust grant (use this to fail CI).
+Exit codes: `0` all proven · `1` input/usage error — including an input that yields no
+IAM principals, which is never reported as proven · `2` at least one violation or
+unguarded trust grant (use this to fail CI). Input-layer warnings (e.g. Terraform values
+over-approximated because they're unknown at plan time) go to stderr.
 
 At least one of `--invariants`, `--privesc`, `--check-trust` is required.

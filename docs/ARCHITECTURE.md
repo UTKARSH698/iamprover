@@ -55,9 +55,16 @@ flowchart LR
 
 Three front-ends, one output type: `model.Account`.
 
-- **`terraform.py`** — reads `terraform show -json plan` output: inline policies, managed
-  policies (resolved by ARN or configuration reference), and `aws_s3_bucket_policy`
-  resources.
+- **`terraform.py`** — reads `terraform show -json plan` output: users, roles (with trust
+  policies, `inline_policy`, `managed_policy_arns`), groups (flattened into members),
+  inline and managed policies, and `aws_s3_bucket_policy`. Most ARNs are unknown until
+  apply, so links are resolved from the plan's `configuration` block, descending into
+  modules (whose references are module-local). Principals get real IAM ARNs (account id
+  from `--tf-account-id` or inferred from the plan). Anything the plan cannot reveal is
+  widened, never dropped: a policy whose content isn't in the plan (an AWS-managed
+  policy attached by ARN, a computed document) becomes Allow `*`; a computed trust
+  policy trusts the principals its expression references, the account root, and the
+  compute services. Every widening is reported as a warning on stderr.
 - **`aws.py`** — reads a live-account snapshot from
   `aws iam get-account-authorization-details`: flattens group memberships and
   managed-policy attachments onto each principal, picks each policy's default version,
@@ -120,12 +127,16 @@ the Z3 query entirely when no statement could possibly grant the forbidden actio
 as. Traversal is **plain Python, deliberately not Z3**; Z3 only decides individual edges:
 
 1. **Graph build** — two relations contribute edges `P → Q`:
-   - `assume-role`: P's identity policies grant an assume-role action on Q (checked with
-     the same `allowed()` encoder) *and* Q's trust policy names P. Built trust-side-out:
-     only principals a trust policy actually names are candidate sources, so cost scales
-     with trust grants, not principal pairs.
+   - `assume-role`: Q's trust policy admits P, following AWS's rules. If it names P's ARN
+     (or `*`) in the same account, the trust policy alone grants the assume — only an
+     explicit identity Deny can block it. If it names P's account root, or P is in
+     another account, the trust only delegates and P's identity policies must also allow
+     `sts:AssumeRole` on Q (checked with the same `allowed()` encoder). Built
+     trust-side-out: only principals a trust policy names — or that live in an account
+     whose root it names — are candidate sources, so cost scales with trust grants, not
+     principal pairs.
    - `pass-role`: Q is a role whose trust policy admits a compute service (Lambda, EC2,
-     CloudFormation, Glue, SageMaker), P is allowed `iam:PassRole` on Q, *and* P is
+     CloudFormation, Glue, SageMaker, CodeBuild, Data Pipeline), P is allowed `iam:PassRole` on Q, *and* P is
      allowed that service's launch action. The two permissions are independent requests,
      and `iam:PassedToService` stays free context — both over-approximate. Only
      principals that can syntactically pass *some* role are considered as sources, and an

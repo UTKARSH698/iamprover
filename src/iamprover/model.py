@@ -54,6 +54,8 @@ class Account:
     scps: list[Policy] = field(default_factory=list)
     # Resource Control Policies: bound resource-based access only.
     rcps: list[Policy] = field(default_factory=list)
+    # Input-layer notices (e.g. plan values over-approximated because unknown).
+    warnings: list[str] = field(default_factory=list)
 
     def principal(self, arn: str) -> Principal:
         for p in self.principals:

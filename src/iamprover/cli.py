@@ -46,6 +46,11 @@ def main(argv: list[str] | None = None) -> int:
         "--gaad",
         help="Live account snapshot JSON (`aws iam get-account-authorization-details`)",
     )
+    verify.add_argument(
+        "--tf-account-id",
+        metavar="ACCOUNT_ID",
+        help="AWS account id for --tf-plan principal ARNs (default: inferred from the plan)",
+    )
     verify.add_argument("--invariants", help="Invariant spec YAML")
     verify.add_argument("--format", choices=["text", "json"], default="text")
     verify.add_argument(
@@ -123,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.gaad:
             account = load_gaad(args.gaad)
         elif args.tf_plan:
-            account = load_tf_plan(args.tf_plan)
+            account = load_tf_plan(args.tf_plan, args.tf_account_id)
         else:
             account = load_account(args.account)
         invariants = load_invariants(args.invariants) if args.invariants else []
@@ -135,6 +140,19 @@ def main(argv: list[str] | None = None) -> int:
             account.rcps = list(account.rcps) + load_policy_list(args.rcp)
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    for warning in account.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+    # An empty model makes every invariant hold vacuously — never report that
+    # as a proof.
+    if not account.principals:
+        print(
+            "error: no IAM principals found in the input; refusing to report "
+            "invariants as proven over an empty account",
+            file=sys.stderr,
+        )
         return EXIT_ERROR
 
     if args.check_anonymous:

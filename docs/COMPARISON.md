@@ -1,14 +1,15 @@
-# How iamprover relates to Access Analyzer, Prowler, and Checkov
+# How iamprover relates to Access Analyzer, Prowler, Checkov, and PMapper
 
 Short version: **iamprover is complementary to all three.** They answer different
 questions. Most teams that would benefit from iamprover already run one of these — keep
-running it.
+running it. PMapper is the closest neighbour, so it gets its own section below.
 
 | | Question it answers | Method | Where it runs |
 |---|---|---|---|
 | **AWS IAM Access Analyzer** | "What access does this policy grant / is it broader than intended?" | Automated reasoning (Zelkova) over single policies | AWS-hosted, per-account |
 | **Prowler** | "Which known misconfigurations exist in my account?" | Hundreds of curated checks against live APIs | CLI / SaaS, live account |
 | **Checkov** | "Does my IaC violate known policy-as-code rules?" | Static rules over Terraform/CloudFormation/K8s | CLI / CI, pre-deploy |
+| **PMapper** (NCC Group) | "Who can reach admin, or reach this principal/action?" | Graph of principals and escalation edges, queried with a local policy simulator | CLI, live account (pulled via AWS APIs) |
 | **iamprover** | "Does my *declared, system-level* security invariant provably hold across *all* principals and policies together — and if not, exactly how does it break?" | SMT solving (Z3) over the composed account model | CLI / CI, plan or live snapshot |
 
 ## What's genuinely different
@@ -42,6 +43,30 @@ replay it mentally against your policies and see the hole.
 No AWS account required to analyze a Terraform plan. Runs as a [GitHub Action]
 (https://github.com/marketplace/actions/iamprover) that fails the PR that would break an
 invariant, before deploy.
+
+## iamprover vs. PMapper
+
+Both build a graph of principals where an edge means "can come to act as" — AssumeRole,
+PassRole into a compute service, and so on — and both answer reachability questions over
+it. The difference is what each one *returns* and *where* it runs:
+
+- **A proof, or an exact counterexample.** PMapper answers queries by simulating specific
+  requests. iamprover encodes policy evaluation into an SMT solver: a PASS covers every
+  action, resource, wildcard expansion, and condition context at once; a FAIL is a
+  concrete step-by-step path (`iam:passrole → lambda:createfunction → s3:getobject`)
+  with the request context that makes it work.
+- **Pre-deploy, from a Terraform plan.** iamprover gates the change *before* it exists —
+  `terraform show -json` in CI, no AWS credentials. PMapper analyzes an account that
+  already exists.
+- **Your invariants, not just "is admin reachable".** Declare what must never happen
+  (`forbid` / `forbid_chain`, with exemptions) and iamprover checks reachability against
+  exactly that.
+
+Where PMapper is ahead: it models **more edge types** across more services, ships
+**graph visualization**, and is a **mature, widely used** tool. If you want to explore an
+existing account's privilege graph interactively, PMapper is excellent. If you want a CI
+gate that proves a declared property of the next change, that's what iamprover is for —
+and the two complement each other.
 
 ## What the others do better
 

@@ -6,7 +6,7 @@ Q's permissions":
 - `assume-role` (v0.6): P can call sts:AssumeRole on Q directly.
 - `pass-role` (v0.7): P can hand role Q to a compute service that then runs
   code P controls with Q's credentials — `iam:PassRole` into Lambda, EC2,
-  CloudFormation, Glue, or SageMaker.
+  CloudFormation, Glue, SageMaker, CodeBuild, or Data Pipeline.
 
 For `assume-role`, an edge P -> Q exists when P's identity policies grant an assume-role action
 on Q's ARN *and* Q's trust policy allows P as principal. Both principals and
@@ -44,6 +44,7 @@ errs toward more edges, never fewer.
 
 from __future__ import annotations
 
+import re
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -52,7 +53,7 @@ import z3
 from iamprover.engine.context import Context
 from iamprover.engine.encoder import allowed
 from iamprover.engine.patterns import expand_variables, globs_intersect
-from iamprover.model import Account, Principal, Statement
+from iamprover.model import Account, Policy, Principal, Statement
 
 DEFAULT_MAX_HOPS = 4
 
@@ -73,8 +74,16 @@ _PASS_SERVICES: dict[str, tuple[str, ...]] = {
     "ec2.amazonaws.com": ("ec2:runinstances",),
     "cloudformation.amazonaws.com": ("cloudformation:createstack", "cloudformation:updatestack"),
     "glue.amazonaws.com": ("glue:createdevendpoint",),
-    "sagemaker.amazonaws.com": ("sagemaker:createnotebookinstance",),
+    "sagemaker.amazonaws.com": (
+        "sagemaker:createnotebookinstance",
+        "sagemaker:createtrainingjob",
+        "sagemaker:createprocessingjob",
+    ),
+    "codebuild.amazonaws.com": ("codebuild:createproject",),
+    "datapipeline.amazonaws.com": ("datapipeline:createpipeline",),
 }
+
+PASS_SERVICE_PRINCIPALS = tuple(_PASS_SERVICES)
 
 # One (action, resource) request; an edge costs one or more of them.
 HopStep = tuple[str, str]
@@ -97,17 +106,39 @@ def _stmt_has_assume_action(stmt: Statement) -> bool:
     )
 
 
-def _trusts(role: Principal, candidate: Principal) -> bool:
+_EXPLICIT = "explicit"  # trust alone suffices (same-account principal ARN, or "*")
+_DELEGATED = "delegated"  # trust delegates; the caller's identity policy must allow
+
+
+def _account_root_matches(trusted: str, candidate: Principal) -> bool:
+    account = candidate.account_id
+    return account is not None and trusted in (account, f"arn:aws:iam::{account}:root")
+
+
+def _trust_match(role: Principal, candidate: Principal) -> str | None:
+    """How `role`'s trust policy admits `candidate`, mirroring AWS:
+
+    - names the candidate's ARN (or "*") within the same account: the trust
+      policy alone grants the assume — no identity permission needed;
+    - names the candidate's account root, or the candidate is in another
+      account: the trust only delegates, and the candidate's own identity
+      policy must also allow sts:AssumeRole.
+    """
     if role.trust_policy is None:
-        return False
+        return None
+    same_account = candidate.account_id is not None and candidate.account_id == role.account_id
+    best: str | None = None
     for stmt in role.trust_policy.statements:
-        if stmt.effect != "Allow":
+        if stmt.effect != "Allow" or not _stmt_has_assume_action(stmt):
             continue
-        if candidate.arn not in stmt.principals and "*" not in stmt.principals:
-            continue
-        if _stmt_has_assume_action(stmt):
-            return True
-    return False
+        for trusted in stmt.principals:
+            if trusted in ("*", candidate.arn):
+                if same_account:
+                    return _EXPLICIT
+                best = _DELEGATED
+            elif _account_root_matches(trusted, candidate):
+                best = _DELEGATED
+    return best
 
 
 def _may_grant_assume(source: Principal, target_arn: str) -> bool:
@@ -128,8 +159,23 @@ def _may_grant_assume(source: Principal, target_arn: str) -> bool:
 
 
 def _can_assume(source: Principal, target: Principal) -> bool:
-    if not _trusts(target, source):
+    match = _trust_match(target, source)
+    if match is None:
         return False
+    if match == _EXPLICIT:
+        # The trust policy grants it; only an explicit identity Deny can still
+        # block. Probe with an added Allow: sat iff no Deny covers every
+        # context. The boundary is dropped — it can only restrict, so ignoring
+        # it over-approximates.
+        probe = Principal(
+            arn=source.arn,
+            policies=[
+                *source.policies,
+                Policy("trust-grant", [Statement("Allow", actions=["sts:assumerole"],
+                                                 resources=[target.arn])]),
+            ],
+        )
+        return _sat_allowed(probe, "sts:assumerole", target.arn)
     if not _may_grant_assume(source, target.arn):
         return False
     a, r = z3.Strings("a r")
@@ -308,6 +354,10 @@ def _assume_role_edges(account: Account, by_arn: dict[str, Principal]) -> list[t
     actually names (or everyone, for `Principal: "*"`) are candidate sources,
     so cost scales with the number of trust grants rather than all pairs."""
     edges: list[tuple[str, str]] = []
+    by_account: dict[str, list[str]] = {}
+    for p in account.principals:
+        if p.account_id is not None:
+            by_account.setdefault(p.account_id, []).append(p.arn)
     for target in account.principals:
         if target.trust_policy is None:
             continue
@@ -317,10 +367,14 @@ def _assume_role_edges(account: Account, by_arn: dict[str, Principal]) -> list[t
                 continue
             if "*" in stmt.principals:
                 candidates.update(arn for arn in by_arn if arn != target.arn)
-            else:
-                candidates.update(
-                    arn for arn in stmt.principals if arn in by_arn and arn != target.arn
-                )
+                continue
+            candidates.update(arn for arn in stmt.principals if arn in by_arn)
+            # An account-root grant delegates to every principal in that account.
+            for trusted in stmt.principals:
+                root = re.fullmatch(r"(?:arn:aws:iam::)?(\d{12})(?::root)?", trusted)
+                if root:
+                    candidates.update(by_account.get(root.group(1), ()))
+        candidates.discard(target.arn)
         for source_arn in sorted(candidates):
             if _can_assume(by_arn[source_arn], target):
                 edges.append((source_arn, target.arn))

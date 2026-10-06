@@ -29,8 +29,16 @@ Type "iamprover verify --account examples/chain-account.json --invariants exampl
 Enter
 Sleep 5s
 
+Type "clear"
+Enter
+Type "# ...or by passing a privileged role into a Lambda it creates:"
+Enter
+Sleep 1.5s
+
+Type "iamprover verify --account examples/passrole-account.json --invariants examples/invariants.yaml --closure pass-role"
+Enter
+Sleep 5s
+
 Type "# exit code 2 on violation - drop it into CI and it fails the PR"
 Enter
 Sleep 3s
-
-# (re-render trigger)

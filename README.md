@@ -67,7 +67,7 @@ iamprover verify --gaad gaad.json --privesc --check-trust
 ```yaml
 - uses: hashicorp/setup-terraform@v3
 - run: terraform plan -out plan && terraform show -json plan > plan.json
-- uses: UTKARSH698/iamprover@v0.7.0
+- uses: UTKARSH698/iamprover@v0.7.1
   with:
     tf-plan: plan.json
     invariants: invariants.yaml
@@ -98,8 +98,10 @@ invariants:
 
 `--privesc` enables a built-in catalog of the well-known AWS IAM escalation
 paths — policy-version rewrites, credential minting, policy attachment,
-trust-policy rewrites, code hijacking, and the `iam:PassRole` chains into
-Lambda, EC2, CloudFormation, Glue, and SageMaker:
+trust-policy rewrites, hijacking existing compute (Lambda code, Glue
+endpoints, CloudFormation stacks, EC2 instances via SSM / Instance Connect,
+SageMaker notebooks), and the `iam:PassRole` chains into Lambda, EC2,
+CloudFormation, Glue, SageMaker, CodeBuild, and Data Pipeline:
 
 ```bash
 iamprover verify --tf-plan plan.json --privesc \
@@ -224,7 +226,7 @@ iamprover verify --gaad gaad.json --invariants invariants.yaml --closure all
 ```
 
 An edge into role R exists when R's trust policy admits a compute service
-(Lambda, EC2, CloudFormation, Glue, SageMaker), the source may
+(Lambda, EC2, CloudFormation, Glue, SageMaker, CodeBuild, Data Pipeline), the source may
 `iam:PassRole` on R, *and* the source may launch that service. A
 `iam:PassedToService` condition on the PassRole grant doesn't hide the edge
 — it's free request context, kept on the over-approximating side:
@@ -254,8 +256,9 @@ actually reach a violation of *your* invariants.
 - Resource-based policies (e.g. bucket policies) with `Principal: "*"` or exact ARNs, unioned with
   identity-based grants; `--check-anonymous` verifies invariants for an unauthenticated principal
   (catches public grants)
-- Terraform plans: inline policies, managed policies via attachments (resolved by ARN or
-  configuration reference), and `aws_s3_bucket_policy`
+- Terraform plans: users, roles (with trust policies), groups, inline and managed
+  policies, and `aws_s3_bucket_policy` — resolved through module references, with
+  plan-time unknowns widened (never dropped) and reported as warnings
 - Invariant exemptions by exact ARN or glob
 - Multi-step `forbid_chain` invariants (one principal holding every step) and a
   built-in privilege-escalation catalog (`--privesc`)
@@ -269,7 +272,8 @@ actually reach a violation of *your* invariants.
   principals reachable through bounded `sts:AssumeRole` chains, not just
   direct grants, with the chain shown in the counterexample
 - `iam:PassRole` into compute (`--closure pass-role` / `all`): passing a role
-  to Lambda, EC2, CloudFormation, Glue, or SageMaker counts as reaching it,
+  to Lambda, EC2, CloudFormation, Glue, SageMaker, CodeBuild, or Data
+  Pipeline counts as reaching it,
   checked against both the role's service trust and the caller's launch
   permission
 
@@ -278,10 +282,22 @@ Allow and always-false on Deny — so permissions are only ever over-approximate
 flag violations a condition would prevent (false positives), but within the modeled fragment it
 will not miss one (no false negatives). Trust the `PASS`es; investigate the `FAIL`s.
 
+## Validation: IAM Vulnerable
+
+Run against Bishop Fox's [IAM Vulnerable](https://github.com/BishopFox/iam-vulnerable)
+lab — a Terraform project with dozens of deliberately exploitable IAM escalation paths —
+`iamprover verify --tf-plan plan.json --privesc --closure all` detects **all 37
+escalation paths that are exploitable in the lab's own Terraform**, including the four
+"tools commonly miss this" cases — offline, from a `terraform plan`, no AWS account
+needed. Two of five false-positive traps are flagged (a policy-version grant limited to
+unmodifiable AWS-managed policies, and an expired date condition) — the conservative
+direction, by design. Full results and one-command reproduction in
+[`docs/VALIDATION.md`](docs/VALIDATION.md).
+
 ## Performance
 
 A realistic 10,000-principal account — three invariants, full assume-role closure — verifies in
-under 2.5 s end-to-end, thanks to a sound syntactic prefilter that skips provably-unsatisfiable
+about 2 s end-to-end, thanks to a sound syntactic prefilter that skips provably-unsatisfiable
 solver queries. Details, methodology, and worst-case numbers in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
@@ -293,6 +309,7 @@ solver queries. Details, methodology, and worst-case numbers in
 | [`docs/API.md`](docs/API.md) | Python API and full CLI reference |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Pipeline internals and the soundness invariant |
 | [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Measured runtime at 100 / 1k / 10k principals |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | Detection results on the IAM Vulnerable lab |
 | [`docs/COMPARISON.md`](docs/COMPARISON.md) | vs. Access Analyzer, Prowler, Checkov |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, the one rule (never under-approximate), module map |
 

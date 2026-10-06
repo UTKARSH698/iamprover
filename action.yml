@@ -16,6 +16,10 @@ inputs:
     description: "Path to a Terraform plan JSON (`terraform show -json plan`)"
     required: false
     default: ""
+  tf-account-id:
+    description: "AWS account id for tf-plan principal ARNs (default: inferred from the plan)"
+    required: false
+    default: ""
   account:
     description: "Path to an account description JSON (principals + policies)"
     required: false
@@ -85,6 +89,7 @@ runs:
       env:
         IN_INVARIANTS: ${{ inputs.invariants }}
         IN_TF_PLAN: ${{ inputs['tf-plan'] }}
+        IN_TF_ACCOUNT_ID: ${{ inputs['tf-account-id'] }}
         IN_ACCOUNT: ${{ inputs.account }}
         IN_GAAD: ${{ inputs.gaad }}
         IN_CHECK_ANONYMOUS: ${{ inputs['check-anonymous'] }}
@@ -99,6 +104,7 @@ runs:
       run: |
         args=(verify)
         if [ -n "$IN_TF_PLAN" ]; then args+=(--tf-plan "$IN_TF_PLAN"); fi
+        if [ -n "$IN_TF_ACCOUNT_ID" ]; then args+=(--tf-account-id "$IN_TF_ACCOUNT_ID"); fi
         if [ -n "$IN_ACCOUNT" ]; then args+=(--account "$IN_ACCOUNT"); fi
         if [ -n "$IN_GAAD" ]; then args+=(--gaad "$IN_GAAD"); fi
         if [ -n "$IN_INVARIANTS" ]; then args+=(--invariants "$IN_INVARIANTS"); fi

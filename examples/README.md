@@ -136,7 +136,7 @@ iamprover verify --tf-plan plan.json --invariants invariants.yaml   # exit 2 on 
 Or with the GitHub Action:
 
 ```yaml
-- uses: UTKARSH698/iamprover@v0.7.0
+- uses: UTKARSH698/iamprover@v0.7.1
   with:
     tf-plan: plan.json
     invariants: invariants.yaml

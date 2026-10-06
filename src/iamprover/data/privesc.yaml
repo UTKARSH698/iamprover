@@ -81,7 +81,26 @@ invariants:
       and use its credentials from the notebook
     forbid_chain:
       - action: "iam:PassRole"
-      - action: "sagemaker:CreateNotebookInstance"
+      - actions:
+          - "sagemaker:CreateNotebookInstance"
+          - "sagemaker:CreateTrainingJob"
+          - "sagemaker:CreateProcessingJob"
+
+  - id: privesc-passrole-codebuild
+    description: >-
+      Principal can create a CodeBuild project running as a privileged role and
+      execute arbitrary build commands with its permissions
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "codebuild:CreateProject"
+
+  - id: privesc-passrole-datapipeline
+    description: >-
+      Principal can create a Data Pipeline running as a privileged role and
+      execute arbitrary activities with its permissions
+    forbid_chain:
+      - action: "iam:PassRole"
+      - action: "datapipeline:CreatePipeline"
 
   - id: privesc-lambda-code-hijack
     description: >-
@@ -97,4 +116,31 @@ invariants:
       reach the credentials of its attached role
     forbid:
       actions: ["glue:UpdateDevEndpoint"]
+      resources: ["*"]
+
+  - id: privesc-cloudformation-stack-hijack
+    description: >-
+      Principal can update an existing CloudFormation stack and have its
+      service role create arbitrary resources on its behalf
+    forbid:
+      actions: ["cloudformation:UpdateStack", "cloudformation:CreateChangeSet"]
+      resources: ["*"]
+
+  - id: privesc-instance-session-hijack
+    description: >-
+      Principal can run commands on, or open a session to, an existing EC2
+      instance and use the credentials of its instance-profile role
+    forbid:
+      actions:
+        - "ssm:SendCommand"
+        - "ssm:StartSession"
+        - "ec2-instance-connect:SendSSHPublicKey"
+      resources: ["*"]
+
+  - id: privesc-sagemaker-notebook-hijack
+    description: >-
+      Principal can open a presigned URL to an existing SageMaker notebook and
+      use the credentials of its attached role
+    forbid:
+      actions: ["sagemaker:CreatePresignedNotebookInstanceUrl"]
       resources: ["*"]

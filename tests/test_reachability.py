@@ -131,3 +131,40 @@ def test_invariant_exemption_applies_to_chain_target():
     reachability = ReachabilityIndex(account)
     result = check_invariant(account, invariant, reachability)
     assert result.passed
+
+
+# ---- v0.7.1: AWS same-account trust semantics ---------------------------------
+
+
+def test_explicit_same_account_trust_needs_no_identity_permission():
+    # AWS: a trust policy naming the principal's own ARN in the same account
+    # grants the assume by itself.
+    a_arn = "arn:aws:iam::111122223333:role/a"
+    b = _role("b", [Statement("Allow", actions=["s3:*"], resources=["*"])], trusts=[a_arn])
+    a = _role("a", [])
+    assert build_graph(Account(principals=[a, b]))[a.arn] == [b.arn]
+
+
+def test_explicit_trust_still_blocked_by_identity_deny():
+    a_arn = "arn:aws:iam::111122223333:role/a"
+    b = _role("b", [], trusts=[a_arn])
+    a = _role("a", [Statement("Deny", actions=["sts:AssumeRole"], resources=[b.arn])])
+    assert build_graph(Account(principals=[a, b]))[a.arn] == []
+
+
+def test_account_root_trust_delegates_to_identity_policy():
+    b = _role("b", [], trusts=["arn:aws:iam::111122223333:root"])
+    with_perm = _role("with-perm", [_can_assume_stmt(b.arn)])
+    without = _role("without", [Statement("Allow", actions=["s3:*"], resources=["*"])])
+    graph = build_graph(Account(principals=[with_perm, without, b]))
+    assert graph[with_perm.arn] == [b.arn]
+    assert graph[without.arn] == []
+
+
+def test_cross_account_explicit_trust_needs_identity_permission():
+    other = "arn:aws:iam::999988887777:role/x"
+    b = _role("b", [], trusts=[other])
+    x_without = Principal(arn=other, policies=[Policy("p", [])])
+    assert build_graph(Account(principals=[x_without, b]))[other] == []
+    x_with = Principal(arn=other, policies=[Policy("p", [_can_assume_stmt(b.arn)])])
+    assert build_graph(Account(principals=[x_with, b]))[other] == [b.arn]

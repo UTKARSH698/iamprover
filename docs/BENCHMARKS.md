@@ -18,13 +18,19 @@ IAM-mutation invariant, and a two-step `forbid_chain`.
 
 | principals | direct check (3 invariants) | assume-role graph build | closure check (3 invariants) |
 |---|---|---|---|
-| 100 | 0.02 s | 0.02 s | 0.01 s |
-| 1,000 | 0.11 s | 0.14 s | 0.10 s |
-| 10,000 | **1.01 s** | 1.34 s | **1.00 s** |
+| 100 | 0.01 s | <0.01 s | 0.01 s |
+| 1,000 | 0.09 s | <0.01 s | 0.10 s |
+| 10,000 | **0.96 s** | 0.04 s | **0.95 s** |
 
 Scaling is linear in account size, and a full 10k-principal account — including building
 the assume-role graph and re-checking every invariant over transitive chains — completes
-in under 2.5 s total.
+in about 2 s total.
+
+The assume-role graph build fell from 1.34 s to 0.04 s in v0.7.1. Fixing the trust
+semantics (a same-account trust policy that names a principal grants the assume on its
+own) means those edges no longer need an identity-policy query; whether an explicit
+identity Deny blocks them is decided by the same exact solver-free fast path PassRole
+uses. The edge set at 10k principals is identical to v0.7.0's.
 
 ## Why: skipping provably-unsatisfiable solver queries
 
@@ -72,11 +78,11 @@ every deployer can pass every role, giving 80,400 real edges. Reproduce with
 
 | principals | `--closure all` graph build | closure check (3 invariants) |
 |---|---|---|
-| 1,000 | 0.13 s | 0.23 s |
-| 10,000 | **2.34 s** | 2.52 s |
+| 1,000 | 0.02 s | 0.18 s |
+| 10,000 | **1.29 s** | 2.25 s |
 
 A first cut issued one Z3 query per (deployer, role) pair and took **240 s** to build the
-10k graph. Two exact optimizations brought that to 2.3 s with an identical edge set:
+10k graph. Two exact optimizations brought that to ~1.3 s with an identical edge set:
 principals that cannot syntactically pass *any* role are dropped as sources up front, and
 a solver-free fast path decides PassRole/launch permission when it is provably granted (an
 unconditional matching Allow, no Deny that could touch the request, no permission
