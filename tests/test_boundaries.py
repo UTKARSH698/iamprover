@@ -1,8 +1,8 @@
 """v0.5 bounding layers: permission boundaries, SCPs, RCPs."""
 
-from iamprover.model import Condition, Policy, Statement
-
 from test_engine import is_allowed, principal_with
+
+from iamprover.model import Condition, Policy, Statement
 
 
 def _policy(name: str, statements: list[Statement]) -> Policy:

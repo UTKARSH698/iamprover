@@ -36,7 +36,7 @@ def encode_condition(cond: Condition, ctx: Context) -> z3.BoolRef | None:
 
     op = cond.operator
     negated = False
-    if op.startswith("StringNot") or op.startswith("ArnNot") or op == "NotIpAddress":
+    if op.startswith(("StringNot", "ArnNot")) or op == "NotIpAddress":
         negated = True
 
     if op in ("StringEquals", "StringNotEquals"):

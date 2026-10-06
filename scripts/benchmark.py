@@ -177,17 +177,19 @@ def main() -> None:
     for n in args.sizes:
         print(f"n={n}")
         account = make_account(n)
-        direct = bench("direct (3 invariants)", lambda: check_all(account, INVARIANTS))
+        direct = bench(
+            "direct (3 invariants)", lambda account=account: check_all(account, INVARIANTS)
+        )
         graph_t = closure_t = None
         if n in args.closure_sizes:
             index: list[ReachabilityIndex] = []
             graph_t = bench(
                 "build assume-role graph",
-                lambda: index.append(ReachabilityIndex(account)),
+                lambda account=account, index=index: index.append(ReachabilityIndex(account)),
             )
             closure_t = bench(
                 "closure check (3 invariants)",
-                lambda: check_all(account, INVARIANTS, index[0]),
+                lambda account=account, index=index: check_all(account, INVARIANTS, index[0]),
             )
         rows.append((n, direct, graph_t, closure_t))
 
