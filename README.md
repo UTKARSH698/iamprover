@@ -75,6 +75,8 @@ iamprover verify --gaad gaad.json --privesc --check-trust
     privesc-unless: "arn:aws:iam::*:role/admin-*"
 ```
 
+Pin an exact release as above, or use `@v0` to track the latest 0.x release.
+
 Invariants are declared in YAML:
 
 ```yaml

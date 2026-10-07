@@ -2,7 +2,9 @@ name: Publish to PyPI
 
 on:
   push:
-    tags: ["v*"]
+    # Release tags only (vX.Y.Z). The moving major tag `v0`, which Action users
+    # pin to, must not trigger a publish.
+    tags: ["v*.*.*"]
 
 jobs:
   build:
