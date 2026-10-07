@@ -42,6 +42,8 @@ def scenarios(plan_path: str) -> dict[str, list[str]]:
 
 
 def main() -> None:
+    # The table uses ✓ / —, which a legacy Windows console encoding can't print.
+    sys.stdout.reconfigure(encoding="utf-8")
     plan_path, *result_paths = sys.argv[1:]
     labels = ["no closure", "--closure all"][: len(result_paths)]
     runs = [flagged_by(p) for p in result_paths]
